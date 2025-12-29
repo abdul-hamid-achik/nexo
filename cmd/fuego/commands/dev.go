@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/abdul-hamid-achik/fuego/pkg/generator"
+	"github.com/abdul-hamid-achik/fuego/pkg/tools"
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
@@ -251,6 +252,32 @@ func runDev(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	// Check for Tailwind and start watch mode
+	var tailwindProcess *exec.Cmd
+	if tools.HasStyles() {
+		fmt.Printf("  %s Starting Tailwind CSS watcher...\n", yellow("→"))
+		tw := tools.NewTailwindCLI()
+
+		// Do initial build if needed
+		if tools.NeedsInitialBuild() {
+			fmt.Printf("  %s Building initial CSS...\n", yellow("→"))
+			if err := tw.Build(tools.DefaultInputPath(), tools.DefaultOutputPath()); err != nil {
+				fmt.Printf("  %s Tailwind build failed: %v\n", yellow("Warning:"), err)
+			} else {
+				fmt.Printf("  %s CSS built\n", green("✓"))
+			}
+		}
+
+		// Start watch mode
+		proc, err := tw.Watch(tools.DefaultInputPath(), tools.DefaultOutputPath())
+		if err != nil {
+			fmt.Printf("  %s Failed to start Tailwind watcher: %v\n", yellow("Warning:"), err)
+		} else {
+			tailwindProcess = proc
+			fmt.Printf("  %s Tailwind watcher started\n", green("✓"))
+		}
+	}
+
 	// Start the server
 	var serverProcess *exec.Cmd
 	serverProcess = startDevServer(devPort)
@@ -329,8 +356,14 @@ func runDev(cmd *cobra.Command, args []string) {
 			debounceTimer = time.AfterFunc(debounceDuration, func() {
 				timestamp := time.Now().Format("15:04:05")
 
-				// Regenerate routes if a route file changed
-				if strings.Contains(event.Name, "route.go") || strings.Contains(event.Name, "middleware.go") || strings.Contains(event.Name, "proxy.go") {
+				// Regenerate routes if a route/middleware/proxy/page/layout file changed
+				needsRouteRegen := strings.Contains(event.Name, "route.go") ||
+					strings.Contains(event.Name, "middleware.go") ||
+					strings.Contains(event.Name, "proxy.go") ||
+					strings.HasSuffix(event.Name, "page.templ") ||
+					strings.HasSuffix(event.Name, "layout.templ")
+
+				if needsRouteRegen {
 					fmt.Printf("  [%s] %s Regenerating routes...\n", timestamp, yellow("→"))
 					if _, err := generator.ScanAndGenerateRoutes("app", "fuego_routes.go"); err != nil {
 						fmt.Printf("  [%s] %s route generation failed: %v\n", timestamp, red("✗"), err)
@@ -370,6 +403,9 @@ func runDev(cmd *cobra.Command, args []string) {
 
 		case <-signals:
 			fmt.Println("\n  Shutting down...")
+			if tailwindProcess != nil && tailwindProcess.Process != nil {
+				_ = tailwindProcess.Process.Kill()
+			}
 			if serverProcess != nil && serverProcess.Process != nil {
 				_ = serverProcess.Process.Signal(syscall.SIGTERM)
 				_ = serverProcess.Wait()

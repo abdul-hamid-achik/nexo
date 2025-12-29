@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/abdul-hamid-achik/fuego/pkg/tools"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -127,6 +128,28 @@ func runBuild(cmd *cobra.Command, args []string) {
 		if !jsonOutput {
 			green := color.New(color.FgGreen).SprintFunc()
 			fmt.Printf("  %s Templates generated\n", green("✓"))
+		}
+	}
+
+	// Build Tailwind CSS if styles exist
+	if tools.HasStyles() {
+		if !jsonOutput {
+			yellow := color.New(color.FgYellow).SprintFunc()
+			fmt.Printf("  %s Building Tailwind CSS...\n", yellow("→"))
+		}
+		tw := tools.NewTailwindCLI()
+		if err := tw.Build(tools.DefaultInputPath(), tools.DefaultOutputPath()); err != nil {
+			if jsonOutput {
+				printJSONError(fmt.Errorf("tailwind build failed: %w", err))
+			} else {
+				red := color.New(color.FgRed).SprintFunc()
+				fmt.Printf("  %s Tailwind build failed: %v\n", red("Error:"), err)
+			}
+			os.Exit(1)
+		}
+		if !jsonOutput {
+			green := color.New(color.FgGreen).SprintFunc()
+			fmt.Printf("  %s CSS built\n", green("✓"))
 		}
 	}
 

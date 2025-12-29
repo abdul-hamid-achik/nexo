@@ -1,0 +1,49 @@
+package app
+
+templ Page() {
+	<div class="px-4 py-5 sm:p-6">
+		<div class="text-center">
+			<h1 class="text-4xl font-bold text-gray-900 mb-4">
+				Welcome to Fuego
+			</h1>
+			<p class="text-xl text-gray-600 mb-8">
+				A file-system based Go framework with templ, Tailwind CSS, and HTMX
+			</p>
+			
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
+				<div class="bg-white overflow-hidden shadow rounded-lg p-6">
+					<div class="text-3xl mb-4">&#128293;</div>
+					<h3 class="text-lg font-medium text-gray-900">File-Based Routing</h3>
+					<p class="mt-2 text-sm text-gray-500">
+						Just like Next.js - drop files in app/ and get routes automatically.
+					</p>
+				</div>
+				
+				<div class="bg-white overflow-hidden shadow rounded-lg p-6">
+					<div class="text-3xl mb-4">&#9889;</div>
+					<h3 class="text-lg font-medium text-gray-900">HTMX Integration</h3>
+					<p class="mt-2 text-sm text-gray-500">
+						Build interactive UIs without writing JavaScript.
+					</p>
+				</div>
+				
+				<div class="bg-white overflow-hidden shadow rounded-lg p-6">
+					<div class="text-3xl mb-4">&#127912;</div>
+					<h3 class="text-lg font-medium text-gray-900">Tailwind CSS</h3>
+					<p class="mt-2 text-sm text-gray-500">
+						Utility-first CSS with the standalone binary - no Node.js needed.
+					</p>
+				</div>
+			</div>
+			
+			<div class="mt-12">
+				<a 
+					href="/dashboard" 
+					class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700"
+				>
+					Go to Dashboard
+				</a>
+			</div>
+		</div>
+	</div>
+}

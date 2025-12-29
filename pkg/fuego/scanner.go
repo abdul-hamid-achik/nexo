@@ -366,6 +366,19 @@ type MiddlewareInfo struct {
 	FilePath string
 }
 
+// PageInfo holds information about a discovered page.templ file.
+type PageInfo struct {
+	Pattern  string // URL pattern (e.g., "/about", "/dashboard/settings")
+	FilePath string // File path (e.g., "app/about/page.templ")
+	Title    string // Page title (derived from directory name or Metadata)
+}
+
+// LayoutInfo holds information about a discovered layout.templ file.
+type LayoutInfo struct {
+	PathPrefix string // Path prefix this layout applies to (e.g., "/", "/dashboard")
+	FilePath   string // File path (e.g., "app/dashboard/layout.templ")
+}
+
 // ScanRouteInfo scans and returns route info without registering handlers.
 func (s *Scanner) ScanRouteInfo() ([]RouteInfo, error) {
 	var routes []RouteInfo
@@ -655,4 +668,273 @@ func (s *Scanner) extractMatchersFromSpec(vs *ast.ValueSpec) []string {
 	}
 
 	return matchers
+}
+
+// ScanPageInfo scans and returns page info for all page.templ files.
+func (s *Scanner) ScanPageInfo() ([]PageInfo, error) {
+	var pages []PageInfo
+
+	if _, err := os.Stat(s.appDir); os.IsNotExist(err) {
+		return pages, nil
+	}
+
+	err := filepath.Walk(s.appDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if strings.HasPrefix(info.Name(), ".") {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if info.IsDir() && privateFolderRe.MatchString(info.Name()) {
+			return filepath.SkipDir
+		}
+
+		if info.IsDir() || info.Name() != "page.templ" {
+			return nil
+		}
+
+		// Get route pattern from file path
+		pattern := s.pathToPageRoute(path)
+
+		// Derive title from the directory name
+		title := s.derivePageTitle(path)
+
+		// Validate the page has a Page() function
+		if s.hasValidPageFunction(path) {
+			pages = append(pages, PageInfo{
+				Pattern:  pattern,
+				FilePath: path,
+				Title:    title,
+			})
+
+			if s.verbose {
+				fmt.Printf("  Found page: %s (%s) - %s\n", pattern, title, path)
+			}
+		}
+
+		return nil
+	})
+
+	return pages, err
+}
+
+// ScanLayoutInfo scans and returns layout info for all layout.templ files.
+func (s *Scanner) ScanLayoutInfo() ([]LayoutInfo, error) {
+	var layouts []LayoutInfo
+
+	if _, err := os.Stat(s.appDir); os.IsNotExist(err) {
+		return layouts, nil
+	}
+
+	err := filepath.Walk(s.appDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if strings.HasPrefix(info.Name(), ".") {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if info.IsDir() && privateFolderRe.MatchString(info.Name()) {
+			return filepath.SkipDir
+		}
+
+		if info.IsDir() || info.Name() != "layout.templ" {
+			return nil
+		}
+
+		// Get path prefix from file location
+		pathPrefix := s.pathToLayoutPrefix(path)
+
+		// Validate the layout has a Layout() function with children support
+		if s.hasValidLayoutFunction(path) {
+			layouts = append(layouts, LayoutInfo{
+				PathPrefix: pathPrefix,
+				FilePath:   path,
+			})
+
+			if s.verbose {
+				fmt.Printf("  Found layout: %s (%s)\n", pathPrefix, path)
+			}
+		}
+
+		return nil
+	})
+
+	return layouts, err
+}
+
+// pathToPageRoute converts a page.templ file path to a route pattern.
+// Example: app/about/page.templ -> /about
+// Example: app/page.templ -> /
+// Example: app/users/[id]/page.templ -> /users/{id}
+func (s *Scanner) pathToPageRoute(filePath string) string {
+	// Get path relative to app directory
+	rel, err := filepath.Rel(s.appDir, filepath.Dir(filePath))
+	if err != nil || rel == "." {
+		return "/"
+	}
+
+	segments := strings.Split(rel, string(filepath.Separator))
+	routeSegments := make([]string, 0, len(segments))
+
+	for _, seg := range segments {
+		// Skip route groups (folder) - they don't affect the URL
+		if routeGroupRe.MatchString(seg) {
+			continue
+		}
+
+		// Skip "api" directory - pages shouldn't be under api
+		if seg == "api" {
+			continue
+		}
+
+		// Handle optional catch-all [[...param]]
+		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
+			routeSegments = append(routeSegments, "*")
+			continue
+		}
+
+		// Handle catch-all [...param]
+		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			routeSegments = append(routeSegments, "*")
+			continue
+		}
+
+		// Handle dynamic segment [param]
+		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			routeSegments = append(routeSegments, "{"+matches[1]+"}")
+			continue
+		}
+
+		routeSegments = append(routeSegments, seg)
+	}
+
+	if len(routeSegments) == 0 {
+		return "/"
+	}
+
+	return "/" + strings.Join(routeSegments, "/")
+}
+
+// pathToLayoutPrefix converts a layout.templ file path to a path prefix.
+// Example: app/layout.templ -> /
+// Example: app/dashboard/layout.templ -> /dashboard
+func (s *Scanner) pathToLayoutPrefix(filePath string) string {
+	// Get path relative to app directory
+	rel, err := filepath.Rel(s.appDir, filepath.Dir(filePath))
+	if err != nil || rel == "." {
+		return "/"
+	}
+
+	segments := strings.Split(rel, string(filepath.Separator))
+	routeSegments := make([]string, 0, len(segments))
+
+	for _, seg := range segments {
+		// Skip route groups (folder) - they don't affect the URL
+		if routeGroupRe.MatchString(seg) {
+			continue
+		}
+
+		// Skip "api" directory
+		if seg == "api" {
+			continue
+		}
+
+		routeSegments = append(routeSegments, seg)
+	}
+
+	if len(routeSegments) == 0 {
+		return "/"
+	}
+
+	return "/" + strings.Join(routeSegments, "/")
+}
+
+// derivePageTitle derives a page title from the file path.
+// Example: app/about/page.templ -> "About"
+// Example: app/user-profile/page.templ -> "User Profile"
+// Example: app/page.templ -> "Home"
+func (s *Scanner) derivePageTitle(filePath string) string {
+	// Get the directory name
+	dir := filepath.Dir(filePath)
+	dirName := filepath.Base(dir)
+
+	// Root page
+	if dirName == "app" || dirName == "." {
+		return "Home"
+	}
+
+	// Skip route groups - use parent directory
+	if routeGroupRe.MatchString(dirName) {
+		parent := filepath.Dir(dir)
+		dirName = filepath.Base(parent)
+		if dirName == "app" || dirName == "." {
+			return "Home"
+		}
+	}
+
+	// Convert to title case
+	return toTitleCase(dirName)
+}
+
+// toTitleCase converts a slug to title case.
+// Example: "about" -> "About"
+// Example: "user-profile" -> "User Profile"
+// Example: "dashboard_settings" -> "Dashboard Settings"
+func toTitleCase(s string) string {
+	// Replace hyphens and underscores with spaces
+	s = strings.ReplaceAll(s, "-", " ")
+	s = strings.ReplaceAll(s, "_", " ")
+
+	// Title case each word
+	words := strings.Fields(s)
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(string(word[0])) + strings.ToLower(word[1:])
+		}
+	}
+
+	return strings.Join(words, " ")
+}
+
+// hasValidPageFunction checks if a page.templ file has a valid Page() function.
+// A valid page must export a templ Page() component.
+func (s *Scanner) hasValidPageFunction(filePath string) bool {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return false
+	}
+
+	// Look for "templ Page()" in the file content
+	// This is a simple check - templ files aren't valid Go files so we can't use AST
+	contentStr := string(content)
+	return strings.Contains(contentStr, "templ Page()")
+}
+
+// hasValidLayoutFunction checks if a layout.templ file has a valid Layout() function.
+// A valid layout must export a templ Layout(title string) component with { children... }.
+func (s *Scanner) hasValidLayoutFunction(filePath string) bool {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return false
+	}
+
+	contentStr := string(content)
+
+	// Check for Layout function
+	hasLayout := strings.Contains(contentStr, "templ Layout(")
+
+	// Check for children support
+	hasChildren := strings.Contains(contentStr, "{ children... }")
+
+	return hasLayout && hasChildren
 }

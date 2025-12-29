@@ -42,4 +42,5 @@ func init() {
 	rootCmd.AddCommand(devCmd)
 	rootCmd.AddCommand(buildCmd)
 	rootCmd.AddCommand(routesCmd)
+	rootCmd.AddCommand(tailwindCmd)
 }

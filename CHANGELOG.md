@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2024-12-29
+
+### Added
+
+- **First-class templ page support** - File-based page routing like Next.js
+  - `page.templ` files define HTML pages at routes
+  - `layout.templ` files wrap pages with shared UI (navigation, footer)
+  - Automatic title derivation from directory names
+  - Dynamic routes `[param]` and catch-all `[...param]` for pages
+  - Route groups `(group)` for page organization
+- **Tailwind CSS v4 integration** - No Node.js required!
+  - Uses standalone Tailwind binary (auto-downloaded)
+  - `fuego tailwind build` - Build CSS for production
+  - `fuego tailwind watch` - Watch mode for development
+  - `fuego tailwind install` - Install Tailwind binary
+  - `fuego tailwind info` - Show installation info
+  - Auto-watches `styles/` directory during `fuego dev`
+  - Auto-builds CSS during `fuego build`
+- **HTMX integration** - Build interactive UIs without JavaScript
+  - Default layout includes HTMX CDN
+  - `c.IsHTMX()` - Check if request is from HTMX
+  - `c.FormValue()` - Get form values for HTMX forms
+  - Example HTMX patterns in documentation
+- **Interactive project creation** - `fuego new` now prompts:
+  - "Would you like to use templ for pages?" (creates full-stack project)
+  - `--api-only` flag to skip templ/Tailwind/HTMX
+  - `--skip-prompts` flag to use defaults
+- **Renderer component** - Templ rendering with layout support
+  - `Renderer.SetLayout()` - Register layouts by path prefix
+  - `Renderer.RenderWithLayout()` - Render with appropriate layout
+  - `Renderer.RenderError()` - Render error pages
+  - `Renderer.RenderNotFound()` - Render 404 pages
+  - `StreamingRenderer` for chunked HTML responses
+- **New Context methods**:
+  - `c.FormValue(key)` - Get form value
+  - `c.FormFile(key)` - Get uploaded file
+- **New fullstack example** in `examples/fullstack/`
+  - Task list app with HTMX interactions
+  - Demonstrates pages, layouts, Tailwind, and HTMX
+- **Comprehensive test coverage** for new features:
+  - `renderer_test.go` - Tests for Renderer component
+  - `scanner_test.go` - Tests for page/layout scanning
+  - `tailwind_test.go` - Tests for Tailwind CLI management
+
+### Changed
+
+- `fuego dev` now:
+  - Watches `page.templ` and `layout.templ` files for changes
+  - Starts Tailwind watcher if `styles/input.css` exists
+  - Does initial CSS build if output doesn't exist
+- `fuego build` now:
+  - Builds Tailwind CSS before Go binary
+- `fuego new` creates full-stack project by default (with templ/Tailwind/HTMX)
+- Documentation updated with page/layout/Tailwind/HTMX guidance
+
+### Technical Details
+
+- `pkg/tools/tailwind.go` - Tailwind CLI management
+- `pkg/fuego/renderer.go` - Templ rendering with layouts
+- `pkg/fuego/scanner.go` - Page and layout scanning
+- `pkg/generator/generator.go` - Page route generation
+- Binary cached at `~/.cache/fuego/bin/`
+
 ## [0.3.6] - 2024-12-29
 
 ### Fixed
@@ -131,7 +194,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Built on chi router
 - 137+ test cases
 
-[Unreleased]: https://github.com/abdul-hamid-achik/fuego/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/abdul-hamid-achik/fuego/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/abdul-hamid-achik/fuego/compare/v0.3.6...v0.4.0
 [0.3.6]: https://github.com/abdul-hamid-achik/fuego/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/abdul-hamid-achik/fuego/compare/v0.3.0...v0.3.5
 [0.3.0]: https://github.com/abdul-hamid-achik/fuego/compare/v0.2.0...v0.3.0

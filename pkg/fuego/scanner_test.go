@@ -1000,3 +1000,439 @@ func TestScanner_SetVerbose(t *testing.T) {
 		t.Error("expected verbose to be false")
 	}
 }
+
+// ---------- Page Scanning Tests ----------
+
+func TestScanner_PathToPageRoute(t *testing.T) {
+	tests := []struct {
+		name     string
+		filePath string
+		want     string
+	}{
+		{
+			name:     "root page",
+			filePath: "app/page.templ",
+			want:     "/",
+		},
+		{
+			name:     "simple page",
+			filePath: "app/about/page.templ",
+			want:     "/about",
+		},
+		{
+			name:     "nested page",
+			filePath: "app/dashboard/settings/page.templ",
+			want:     "/dashboard/settings",
+		},
+		{
+			name:     "dynamic segment",
+			filePath: "app/users/[id]/page.templ",
+			want:     "/users/{id}",
+		},
+		{
+			name:     "catch-all",
+			filePath: "app/docs/[...slug]/page.templ",
+			want:     "/docs/*",
+		},
+		{
+			name:     "optional catch-all",
+			filePath: "app/shop/[[...categories]]/page.templ",
+			want:     "/shop/*",
+		},
+		{
+			name:     "route group",
+			filePath: "app/(marketing)/about/page.templ",
+			want:     "/about",
+		},
+		{
+			name:     "skips api directory",
+			filePath: "app/api/users/page.templ",
+			want:     "/users",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewScanner("app")
+			got := s.pathToPageRoute(tt.filePath)
+			if got != tt.want {
+				t.Errorf("pathToPageRoute() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScanner_PathToLayoutPrefix(t *testing.T) {
+	tests := []struct {
+		name     string
+		filePath string
+		want     string
+	}{
+		{
+			name:     "root layout",
+			filePath: "app/layout.templ",
+			want:     "/",
+		},
+		{
+			name:     "nested layout",
+			filePath: "app/dashboard/layout.templ",
+			want:     "/dashboard",
+		},
+		{
+			name:     "route group layout",
+			filePath: "app/(admin)/layout.templ",
+			want:     "/",
+		},
+		{
+			name:     "deeply nested",
+			filePath: "app/admin/settings/layout.templ",
+			want:     "/admin/settings",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewScanner("app")
+			got := s.pathToLayoutPrefix(tt.filePath)
+			if got != tt.want {
+				t.Errorf("pathToLayoutPrefix() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScanner_DerivePageTitle(t *testing.T) {
+	tests := []struct {
+		name     string
+		filePath string
+		want     string
+	}{
+		{
+			name:     "root page",
+			filePath: "app/page.templ",
+			want:     "Home",
+		},
+		{
+			name:     "simple page",
+			filePath: "app/about/page.templ",
+			want:     "About",
+		},
+		{
+			name:     "hyphenated",
+			filePath: "app/user-profile/page.templ",
+			want:     "User Profile",
+		},
+		{
+			name:     "underscored",
+			filePath: "app/my_dashboard/page.templ",
+			want:     "My Dashboard",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewScanner("app")
+			got := s.derivePageTitle(tt.filePath)
+			if got != tt.want {
+				t.Errorf("derivePageTitle() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToTitleCase(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"about", "About"},
+		{"user-profile", "User Profile"},
+		{"dashboard_settings", "Dashboard Settings"},
+		{"UPPERCASE", "Uppercase"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := toTitleCase(tt.input)
+			if got != tt.want {
+				t.Errorf("toTitleCase(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScanner_ScanPageInfo_ValidPage(t *testing.T) {
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "app")
+	aboutDir := filepath.Join(appDir, "about")
+
+	if err := os.MkdirAll(aboutDir, 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+
+	pageContent := `package about
+
+templ Page() {
+	<div>About Page</div>
+}
+`
+	if err := os.WriteFile(filepath.Join(aboutDir, "page.templ"), []byte(pageContent), 0644); err != nil {
+		t.Fatalf("failed to write page.templ: %v", err)
+	}
+
+	scanner := NewScanner(appDir)
+	pages, err := scanner.ScanPageInfo()
+	if err != nil {
+		t.Fatalf("ScanPageInfo failed: %v", err)
+	}
+
+	if len(pages) != 1 {
+		t.Errorf("expected 1 page, got %d", len(pages))
+	}
+
+	if len(pages) > 0 {
+		if pages[0].Pattern != "/about" {
+			t.Errorf("expected pattern /about, got %s", pages[0].Pattern)
+		}
+		if pages[0].Title != "About" {
+			t.Errorf("expected title About, got %s", pages[0].Title)
+		}
+	}
+}
+
+func TestScanner_ScanPageInfo_InvalidPage(t *testing.T) {
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "app")
+	aboutDir := filepath.Join(appDir, "about")
+
+	if err := os.MkdirAll(aboutDir, 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+
+	// Page without valid Page() function
+	pageContent := `package about
+
+templ InvalidFunc() {
+	<div>Invalid</div>
+}
+`
+	if err := os.WriteFile(filepath.Join(aboutDir, "page.templ"), []byte(pageContent), 0644); err != nil {
+		t.Fatalf("failed to write page.templ: %v", err)
+	}
+
+	scanner := NewScanner(appDir)
+	pages, err := scanner.ScanPageInfo()
+	if err != nil {
+		t.Fatalf("ScanPageInfo failed: %v", err)
+	}
+
+	if len(pages) != 0 {
+		t.Errorf("expected 0 pages for invalid page, got %d", len(pages))
+	}
+}
+
+func TestScanner_ScanPageInfo_NonExistentDir(t *testing.T) {
+	scanner := NewScanner("/nonexistent/path")
+	pages, err := scanner.ScanPageInfo()
+	if err != nil {
+		t.Fatalf("expected no error for non-existent dir, got: %v", err)
+	}
+
+	if len(pages) != 0 {
+		t.Errorf("expected 0 pages, got %d", len(pages))
+	}
+}
+
+func TestScanner_ScanPageInfo_SkipsPrivateFolders(t *testing.T) {
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "app")
+	privateDir := filepath.Join(appDir, "_components")
+	publicDir := filepath.Join(appDir, "public")
+
+	if err := os.MkdirAll(privateDir, 0755); err != nil {
+		t.Fatalf("failed to create private dir: %v", err)
+	}
+	if err := os.MkdirAll(publicDir, 0755); err != nil {
+		t.Fatalf("failed to create public dir: %v", err)
+	}
+
+	pageContent := `package placeholder
+
+templ Page() {
+	<div>Page</div>
+}
+`
+	// Page in private folder (should be ignored)
+	if err := os.WriteFile(filepath.Join(privateDir, "page.templ"), []byte(pageContent), 0644); err != nil {
+		t.Fatalf("failed to write private page.templ: %v", err)
+	}
+
+	// Page in public folder (should be found)
+	if err := os.WriteFile(filepath.Join(publicDir, "page.templ"), []byte(pageContent), 0644); err != nil {
+		t.Fatalf("failed to write public page.templ: %v", err)
+	}
+
+	scanner := NewScanner(appDir)
+	pages, err := scanner.ScanPageInfo()
+	if err != nil {
+		t.Fatalf("ScanPageInfo failed: %v", err)
+	}
+
+	if len(pages) != 1 {
+		t.Errorf("expected 1 page (private folder should be skipped), got %d", len(pages))
+	}
+
+	if len(pages) > 0 && pages[0].Pattern != "/public" {
+		t.Errorf("expected pattern /public, got %s", pages[0].Pattern)
+	}
+}
+
+// ---------- Layout Scanning Tests ----------
+
+func TestScanner_ScanLayoutInfo_ValidLayout(t *testing.T) {
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "app")
+
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+
+	layoutContent := `package app
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html>
+	<head><title>{ title }</title></head>
+	<body>
+		{ children... }
+	</body>
+	</html>
+}
+`
+	if err := os.WriteFile(filepath.Join(appDir, "layout.templ"), []byte(layoutContent), 0644); err != nil {
+		t.Fatalf("failed to write layout.templ: %v", err)
+	}
+
+	scanner := NewScanner(appDir)
+	layouts, err := scanner.ScanLayoutInfo()
+	if err != nil {
+		t.Fatalf("ScanLayoutInfo failed: %v", err)
+	}
+
+	if len(layouts) != 1 {
+		t.Errorf("expected 1 layout, got %d", len(layouts))
+	}
+
+	if len(layouts) > 0 && layouts[0].PathPrefix != "/" {
+		t.Errorf("expected path prefix /, got %s", layouts[0].PathPrefix)
+	}
+}
+
+func TestScanner_ScanLayoutInfo_InvalidLayout_NoChildren(t *testing.T) {
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "app")
+
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+
+	// Layout without { children... }
+	layoutContent := `package app
+
+templ Layout(title string) {
+	<div>No children support</div>
+}
+`
+	if err := os.WriteFile(filepath.Join(appDir, "layout.templ"), []byte(layoutContent), 0644); err != nil {
+		t.Fatalf("failed to write layout.templ: %v", err)
+	}
+
+	scanner := NewScanner(appDir)
+	layouts, err := scanner.ScanLayoutInfo()
+	if err != nil {
+		t.Fatalf("ScanLayoutInfo failed: %v", err)
+	}
+
+	if len(layouts) != 0 {
+		t.Errorf("expected 0 layouts for layout without children, got %d", len(layouts))
+	}
+}
+
+func TestScanner_ScanLayoutInfo_InvalidLayout_NoLayoutFunc(t *testing.T) {
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "app")
+
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+
+	// Layout without Layout() function
+	layoutContent := `package app
+
+templ SomeOtherFunc() {
+	<div>{ children... }</div>
+}
+`
+	if err := os.WriteFile(filepath.Join(appDir, "layout.templ"), []byte(layoutContent), 0644); err != nil {
+		t.Fatalf("failed to write layout.templ: %v", err)
+	}
+
+	scanner := NewScanner(appDir)
+	layouts, err := scanner.ScanLayoutInfo()
+	if err != nil {
+		t.Fatalf("ScanLayoutInfo failed: %v", err)
+	}
+
+	if len(layouts) != 0 {
+		t.Errorf("expected 0 layouts for layout without Layout(), got %d", len(layouts))
+	}
+}
+
+func TestScanner_ScanLayoutInfo_MultipleLayouts(t *testing.T) {
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "app")
+	dashboardDir := filepath.Join(appDir, "dashboard")
+
+	if err := os.MkdirAll(dashboardDir, 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+
+	layoutContent := `package placeholder
+
+templ Layout(title string) {
+	<html><body>{ children... }</body></html>
+}
+`
+	// Root layout
+	if err := os.WriteFile(filepath.Join(appDir, "layout.templ"), []byte(layoutContent), 0644); err != nil {
+		t.Fatalf("failed to write root layout.templ: %v", err)
+	}
+
+	// Dashboard layout
+	if err := os.WriteFile(filepath.Join(dashboardDir, "layout.templ"), []byte(layoutContent), 0644); err != nil {
+		t.Fatalf("failed to write dashboard layout.templ: %v", err)
+	}
+
+	scanner := NewScanner(appDir)
+	layouts, err := scanner.ScanLayoutInfo()
+	if err != nil {
+		t.Fatalf("ScanLayoutInfo failed: %v", err)
+	}
+
+	if len(layouts) != 2 {
+		t.Errorf("expected 2 layouts, got %d", len(layouts))
+	}
+}
+
+func TestScanner_ScanLayoutInfo_NonExistentDir(t *testing.T) {
+	scanner := NewScanner("/nonexistent/path")
+	layouts, err := scanner.ScanLayoutInfo()
+	if err != nil {
+		t.Fatalf("expected no error for non-existent dir, got: %v", err)
+	}
+
+	if len(layouts) != 0 {
+		t.Errorf("expected 0 layouts, got %d", len(layouts))
+	}
+}

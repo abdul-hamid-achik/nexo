@@ -497,5 +497,11 @@ func RegisterRoutes(app *fuego.App) {
 	// {{.Method}} {{.Pattern}} (from {{.FilePath}})
 	app.RegisterRoute("{{.Method}}", "{{.Pattern}}", {{.ImportAlias}}.{{.Handler}})
 {{- end}}
+{{- range .Pages}}
+	// Page: {{.Pattern}} (from {{.FilePath}})
+	app.Get("{{.Pattern}}", func(c *fuego.Context) error {
+		return fuego.TemplComponent(c, 200, {{.ImportAlias}}.Page())
+	})
+{{- end}}
 }
 `

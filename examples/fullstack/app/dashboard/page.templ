@@ -1,0 +1,49 @@
+package dashboard
+
+templ Page() {
+	<div class="px-4 py-5 sm:p-6">
+		<h1 class="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
+		
+		<div class="bg-white shadow rounded-lg p-6 mb-6">
+			<h2 class="text-lg font-medium text-gray-900 mb-4">Tasks</h2>
+			
+			<!-- HTMX-powered task list -->
+			<div id="task-list" hx-get="/api/tasks" hx-trigger="load" hx-swap="innerHTML">
+				<div class="text-gray-500">Loading tasks...</div>
+			</div>
+			
+			<!-- Add task form with HTMX -->
+			<form 
+				class="mt-6 flex gap-4"
+				hx-post="/api/tasks" 
+				hx-target="#task-list"
+				hx-swap="innerHTML"
+				hx-on::after-request="this.reset()"
+			>
+				<input 
+					type="text" 
+					name="title" 
+					placeholder="New task..." 
+					class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
+					required
+				/>
+				<button 
+					type="submit"
+					class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700"
+				>
+					Add Task
+				</button>
+			</form>
+		</div>
+		
+		<div class="bg-white shadow rounded-lg p-6">
+			<h2 class="text-lg font-medium text-gray-900 mb-4">How It Works</h2>
+			<ul class="list-disc list-inside text-gray-600 space-y-2">
+				<li>This page is rendered using <strong>templ</strong> templates</li>
+				<li>Styles are powered by <strong>Tailwind CSS v4</strong> (standalone binary)</li>
+				<li>Task interactions use <strong>HTMX</strong> - no JavaScript needed!</li>
+				<li>The API endpoints are in <code class="bg-gray-100 px-1 rounded">app/api/tasks/route.go</code></li>
+			</ul>
+		</div>
+	</div>
+}

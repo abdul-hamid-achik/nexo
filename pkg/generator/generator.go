@@ -456,6 +456,25 @@ type ProxyRegistration struct {
 	HasConfig   bool   // Whether ProxyConfig is defined
 }
 
+// PageRegistration holds information for page registration.
+type PageRegistration struct {
+	ImportPath  string // Full import path for the generated _templ.go package
+	ImportAlias string // Alias for the import
+	Package     string // Package name
+	Pattern     string // Route pattern (e.g., "/about", "/dashboard/settings")
+	Title       string // Page title
+	FilePath    string // Source file path (page.templ)
+}
+
+// LayoutRegistration holds information for layout registration.
+type LayoutRegistration struct {
+	ImportPath  string // Full import path for the generated _templ.go package
+	ImportAlias string // Alias for the import
+	Package     string // Package name
+	PathPrefix  string // Path prefix this layout applies to
+	FilePath    string // Source file path (layout.templ)
+}
+
 // RoutesGenConfig holds configuration for generating the routes file.
 type RoutesGenConfig struct {
 	ModuleName  string                   // Go module name (from go.mod)
@@ -464,6 +483,8 @@ type RoutesGenConfig struct {
 	Routes      []RouteRegistration      // Discovered routes
 	Middlewares []MiddlewareRegistration // Discovered middlewares
 	Proxy       *ProxyRegistration       // Discovered proxy (optional)
+	Pages       []PageRegistration       // Discovered pages
+	Layouts     []LayoutRegistration     // Discovered layouts
 }
 
 // GenerateRoutesFile generates the fuego_routes.go file that registers all routes.
@@ -473,7 +494,7 @@ func GenerateRoutesFile(cfg RoutesGenConfig) (*Result, error) {
 	}
 
 	// Check if we have any routes to register
-	if len(cfg.Routes) == 0 && len(cfg.Middlewares) == 0 && cfg.Proxy == nil {
+	if len(cfg.Routes) == 0 && len(cfg.Middlewares) == 0 && cfg.Proxy == nil && len(cfg.Pages) == 0 && len(cfg.Layouts) == 0 {
 		// No routes found, create a minimal file
 		if err := executeTemplate(cfg.OutputPath, emptyRoutesTemplate, nil); err != nil {
 			return nil, err
@@ -530,6 +551,38 @@ func GenerateRoutesFile(cfg RoutesGenConfig) (*Result, error) {
 		cfg.Proxy.ImportAlias = imports[cfg.Proxy.ImportPath]
 	}
 
+	// Handle page imports
+	for i := range cfg.Pages {
+		p := &cfg.Pages[i]
+		if _, ok := imports[p.ImportPath]; !ok {
+			alias := p.Package + "_page"
+			if count, exists := aliasCounter[alias]; exists {
+				aliasCounter[alias] = count + 1
+				alias = fmt.Sprintf("%s%d", alias, count+1)
+			} else {
+				aliasCounter[alias] = 1
+			}
+			imports[p.ImportPath] = alias
+		}
+		p.ImportAlias = imports[p.ImportPath]
+	}
+
+	// Handle layout imports
+	for i := range cfg.Layouts {
+		l := &cfg.Layouts[i]
+		if _, ok := imports[l.ImportPath]; !ok {
+			alias := l.Package + "_layout"
+			if count, exists := aliasCounter[alias]; exists {
+				aliasCounter[alias] = count + 1
+				alias = fmt.Sprintf("%s%d", alias, count+1)
+			} else {
+				aliasCounter[alias] = 1
+			}
+			imports[l.ImportPath] = alias
+		}
+		l.ImportAlias = imports[l.ImportPath]
+	}
+
 	// Build import list
 	type importEntry struct {
 		Alias string
@@ -540,16 +593,25 @@ func GenerateRoutesFile(cfg RoutesGenConfig) (*Result, error) {
 		importList = append(importList, importEntry{Alias: alias, Path: path})
 	}
 
+	// Check if we need templ import
+	hasPages := len(cfg.Pages) > 0
+
 	data := struct {
 		Imports     []importEntry
 		Routes      []RouteRegistration
 		Middlewares []MiddlewareRegistration
 		Proxy       *ProxyRegistration
+		Pages       []PageRegistration
+		Layouts     []LayoutRegistration
+		HasPages    bool
 	}{
 		Imports:     importList,
 		Routes:      cfg.Routes,
 		Middlewares: cfg.Middlewares,
 		Proxy:       cfg.Proxy,
+		Pages:       cfg.Pages,
+		Layouts:     cfg.Layouts,
+		HasPages:    hasPages,
 	}
 
 	if err := executeTemplate(cfg.OutputPath, routesGenTemplate, data); err != nil {
@@ -595,7 +657,7 @@ func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 
 	fset := token.NewFileSet()
 
-	// Scan for routes and middleware
+	// Scan for routes, middleware, pages, and layouts
 	err = filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -644,6 +706,24 @@ func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 				}
 				cfg.Proxy = proxy
 			}
+
+		case "page.templ":
+			page, err := scanPageFile(path, appDir, moduleName)
+			if err != nil {
+				return err
+			}
+			if page != nil {
+				cfg.Pages = append(cfg.Pages, *page)
+			}
+
+		case "layout.templ":
+			layout, err := scanLayoutFile(path, appDir, moduleName)
+			if err != nil {
+				return err
+			}
+			if layout != nil {
+				cfg.Layouts = append(cfg.Layouts, *layout)
+			}
 		}
 
 		return nil
@@ -654,6 +734,189 @@ func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 	}
 
 	return GenerateRoutesFile(cfg)
+}
+
+// scanPageFile scans a page.templ file and returns registration info
+func scanPageFile(filePath, appDir, moduleName string) (*PageRegistration, error) {
+	// Validate the page has a valid Page() function
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	contentStr := string(content)
+	if !strings.Contains(contentStr, "templ Page()") {
+		return nil, nil // Skip pages without Page() function
+	}
+
+	// Get the import path and pattern
+	relDir, err := filepath.Rel(".", filepath.Dir(filePath))
+	if err != nil {
+		return nil, err
+	}
+	importPath := moduleName + "/" + filepath.ToSlash(relDir)
+	pattern := pagePathToPattern(filepath.Dir(filePath), appDir)
+	pkgName := packageNameFromDir(filepath.Dir(filePath))
+	title := deriveTitle(filepath.Dir(filePath), appDir)
+
+	return &PageRegistration{
+		ImportPath: importPath,
+		Package:    pkgName,
+		Pattern:    pattern,
+		Title:      title,
+		FilePath:   filePath,
+	}, nil
+}
+
+// scanLayoutFile scans a layout.templ file and returns registration info
+func scanLayoutFile(filePath, appDir, moduleName string) (*LayoutRegistration, error) {
+	// Validate the layout has a valid Layout() function with children
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	contentStr := string(content)
+	if !strings.Contains(contentStr, "templ Layout(") {
+		return nil, nil // Skip layouts without Layout() function
+	}
+	if !strings.Contains(contentStr, "{ children... }") {
+		return nil, nil // Skip layouts without children support
+	}
+
+	// Get the import path and path prefix
+	relDir, err := filepath.Rel(".", filepath.Dir(filePath))
+	if err != nil {
+		return nil, err
+	}
+	importPath := moduleName + "/" + filepath.ToSlash(relDir)
+	pathPrefix := layoutPathToPrefix(filepath.Dir(filePath), appDir)
+	pkgName := packageNameFromDir(filepath.Dir(filePath))
+
+	return &LayoutRegistration{
+		ImportPath: importPath,
+		Package:    pkgName,
+		PathPrefix: pathPrefix,
+		FilePath:   filePath,
+	}, nil
+}
+
+// pagePathToPattern converts a page directory to a route pattern
+func pagePathToPattern(dir, appDir string) string {
+	rel, err := filepath.Rel(appDir, dir)
+	if err != nil || rel == "." {
+		return "/"
+	}
+
+	segments := strings.Split(rel, string(filepath.Separator))
+	var routeSegments []string
+
+	for _, seg := range segments {
+		// Skip route groups
+		if strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")") {
+			continue
+		}
+
+		// Skip api directory - pages shouldn't be in api
+		if seg == "api" {
+			continue
+		}
+
+		// Handle dynamic segments
+		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
+			routeSegments = append(routeSegments, "*")
+			continue
+		}
+		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			routeSegments = append(routeSegments, "*")
+			continue
+		}
+		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			routeSegments = append(routeSegments, "{"+matches[1]+"}")
+			continue
+		}
+
+		routeSegments = append(routeSegments, seg)
+	}
+
+	if len(routeSegments) == 0 {
+		return "/"
+	}
+
+	return "/" + strings.Join(routeSegments, "/")
+}
+
+// layoutPathToPrefix converts a layout directory to a path prefix
+func layoutPathToPrefix(dir, appDir string) string {
+	rel, err := filepath.Rel(appDir, dir)
+	if err != nil || rel == "." {
+		return "/"
+	}
+
+	segments := strings.Split(rel, string(filepath.Separator))
+	var routeSegments []string
+
+	for _, seg := range segments {
+		// Skip route groups
+		if strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")") {
+			continue
+		}
+
+		// Skip api directory
+		if seg == "api" {
+			continue
+		}
+
+		routeSegments = append(routeSegments, seg)
+	}
+
+	if len(routeSegments) == 0 {
+		return "/"
+	}
+
+	return "/" + strings.Join(routeSegments, "/")
+}
+
+// packageNameFromDir extracts package name from directory
+func packageNameFromDir(dir string) string {
+	base := filepath.Base(dir)
+
+	// Handle route groups
+	if strings.HasPrefix(base, "(") && strings.HasSuffix(base, ")") {
+		base = strings.TrimPrefix(base, "(")
+		base = strings.TrimSuffix(base, ")")
+	}
+
+	return cleanPackageName(base)
+}
+
+// deriveTitle derives a page title from the directory path
+func deriveTitle(dir, appDir string) string {
+	rel, err := filepath.Rel(appDir, dir)
+	if err != nil || rel == "." {
+		return "Home"
+	}
+
+	// Get the last non-group segment
+	segments := strings.Split(rel, string(filepath.Separator))
+	for i := len(segments) - 1; i >= 0; i-- {
+		seg := segments[i]
+		// Skip route groups
+		if strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")") {
+			continue
+		}
+		// Skip dynamic segments for title
+		if strings.HasPrefix(seg, "[") {
+			continue
+		}
+		// Skip api
+		if seg == "api" {
+			continue
+		}
+		return toTitle(strings.ReplaceAll(strings.ReplaceAll(seg, "-", " "), "_", " "))
+	}
+
+	return "Home"
 }
 
 // getModuleName reads the module name from go.mod

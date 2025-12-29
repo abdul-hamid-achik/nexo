@@ -308,6 +308,212 @@ Use MCP's `fuego_validate` tool or parse the project structure to check:
 - Middleware files have valid signatures
 - Proxy file has valid signature
 
+## Templ Pages and Layouts
+
+Fuego supports file-based page routing with templ templates, similar to Next.js.
+
+### Page Files
+
+Create `page.templ` files to define HTML pages:
+
+```
+app/
+├── page.templ           # / (home page)
+├── layout.templ         # Root layout
+├── about/
+│   └── page.templ       # /about
+├── dashboard/
+│   ├── page.templ       # /dashboard
+│   └── layout.templ     # Dashboard-specific layout
+└── users/
+    └── [id]/
+        └── page.templ   # /users/:id (dynamic)
+```
+
+**page.templ example:**
+```go
+package dashboard
+
+templ Page() {
+	<div class="p-4">
+		<h1 class="text-2xl font-bold">Dashboard</h1>
+		<p>Welcome to your dashboard!</p>
+	</div>
+}
+```
+
+### Layout Files
+
+Layouts wrap pages with common UI (navigation, footer, etc.):
+
+**layout.templ example:**
+```go
+package app
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8"/>
+		<title>{ title }</title>
+		<link rel="stylesheet" href="/static/css/output.css"/>
+		<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+	</head>
+	<body>
+		<nav><!-- Navigation --></nav>
+		<main>
+			{ children... }
+		</main>
+	</body>
+	</html>
+}
+```
+
+**Requirements:**
+- Layout must have `templ Layout(` signature
+- Layout must include `{ children... }` for page content
+- Nested layouts override parent layouts
+
+### Generating Pages
+
+```bash
+fuego generate page dashboard
+fuego generate page admin/settings --with-layout
+```
+
+## Tailwind CSS Integration
+
+Fuego uses the **standalone Tailwind CSS v4 binary** - no Node.js required!
+
+### Setup
+
+When creating a new project with `fuego new myapp`:
+- Answer "Yes" to "Would you like to use templ for pages?"
+- Tailwind is automatically set up with `styles/input.css`
+
+### Tailwind Commands
+
+```bash
+# Build CSS for production (minified)
+fuego tailwind build
+
+# Watch mode for development
+fuego tailwind watch
+
+# Install Tailwind binary (auto-downloaded if missing)
+fuego tailwind install
+
+# Show installation info
+fuego tailwind info
+```
+
+### File Structure
+
+```
+myproject/
+├── styles/
+│   └── input.css        # Source CSS with Tailwind directives
+├── static/
+│   └── css/
+│       └── output.css   # Compiled CSS (generated)
+└── app/
+    └── layout.templ     # Links to /static/css/output.css
+```
+
+### input.css Example
+
+```css
+@import "tailwindcss";
+
+/* Custom styles */
+.btn-primary {
+  @apply bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700;
+}
+```
+
+### Dev Mode
+
+When running `fuego dev`:
+1. Tailwind watcher starts automatically if `styles/input.css` exists
+2. CSS rebuilds on any file change
+3. No manual rebuild needed
+
+### Build Mode
+
+When running `fuego build`:
+1. Tailwind builds minified CSS automatically
+2. Output goes to `static/css/output.css`
+
+## HTMX Integration
+
+Fuego includes HTMX out of the box for interactive UIs without JavaScript.
+
+### Setup
+
+The default `layout.templ` includes the HTMX CDN:
+```html
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+```
+
+### HTMX Examples
+
+**Load content on page load:**
+```html
+<div hx-get="/api/users" hx-trigger="load" hx-swap="innerHTML">
+  Loading...
+</div>
+```
+
+**Form submission:**
+```html
+<form hx-post="/api/tasks" hx-target="#task-list" hx-swap="innerHTML">
+  <input type="text" name="title" placeholder="New task..."/>
+  <button type="submit">Add</button>
+</form>
+```
+
+**Button click:**
+```html
+<button 
+  hx-delete="/api/tasks?id=123" 
+  hx-target="#task-list"
+  hx-confirm="Are you sure?"
+>
+  Delete
+</button>
+```
+
+### Context Helpers
+
+```go
+// Check if request is from HTMX
+if c.IsHTMX() {
+    return c.HTML(200, "<li>New Item</li>")
+}
+return c.JSON(200, item)
+
+// Get form values (for HTMX forms)
+title := c.FormValue("title")
+```
+
+### Common Patterns
+
+**Toggle with checkbox:**
+```html
+<input 
+  type="checkbox" 
+  hx-post="/api/tasks/toggle?id={{ .ID }}"
+  hx-target="#task-list"
+/>
+```
+
+**Infinite scroll:**
+```html
+<div hx-get="/api/items?page=2" hx-trigger="revealed" hx-swap="afterend">
+  Loading more...
+</div>
+```
+
 ## Context API Reference
 
 ### Request Data
@@ -317,6 +523,7 @@ Use MCP's `fuego_validate` tool or parse the project structure to check:
 - `c.QueryBool("active", false)` - Query as bool with default
 - `c.Header("Authorization")` - Request header
 - `c.Bind(&body)` - Parse JSON body into struct
+- `c.FormValue("key")` - Form value (for HTML forms)
 - `c.Cookie("session")` - Get cookie value
 - `c.Method()` - HTTP method (GET, POST, etc.)
 - `c.Path()` - Request path

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -165,6 +166,18 @@ func (c *Context) AddHeader(key, value string) {
 }
 
 // ---------- Request Body ----------
+
+// FormValue returns a form value from the request.
+// It parses form data if not already parsed.
+func (c *Context) FormValue(key string) string {
+	return c.Request.FormValue(key)
+}
+
+// FormFile returns a file from the multipart form.
+func (c *Context) FormFile(key string) (*multipart.FileHeader, error) {
+	_, fh, err := c.Request.FormFile(key)
+	return fh, err
+}
 
 // Bind parses the JSON request body into the provided struct.
 func (c *Context) Bind(v any) error {
