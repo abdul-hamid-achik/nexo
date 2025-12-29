@@ -48,17 +48,12 @@ jobs:
         with:
           version: v2.7.2
 
+  # Verify the project builds (single platform, fast check)
+  # Full cross-platform builds are done by GoReleaser on release
   build:
-    name: Build
+    name: Build Check
     runs-on: ubuntu-latest
     needs: [test, lint]
-    strategy:
-      matrix:
-        goos: [linux, darwin, windows]
-        goarch: [amd64, arm64]
-        exclude:
-          - goos: windows
-            goarch: arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -69,18 +64,4 @@ jobs:
           cache: true
 
       - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          EXT=""
-          if [ "$GOOS" = "windows" ]; then
-            EXT=".exe"
-          fi
-          go build -ldflags="-s -w" -o dist/fuego-${{ matrix.goos }}-${{ matrix.goarch }}${EXT} ./cmd/fuego
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: fuego-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/
+        run: go build -o fuego ./cmd/fuego
