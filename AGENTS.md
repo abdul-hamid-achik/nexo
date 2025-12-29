@@ -575,3 +575,98 @@ title := c.FormValue("title")
 - `c.Get("key")` - Retrieve value from context
 - `c.GetString("key")` - Get as string
 - `c.GetInt("key")` - Get as int
+
+## Context7 Integration
+
+Fuego is registered with [Context7](https://context7.com), which provides up-to-date documentation to AI coding assistants. This ensures developers always get current, accurate information when using tools like Cursor, Claude, or other AI assistants.
+
+### Maintaining context7.json
+
+**IMPORTANT**: When making changes to Fuego's documentation, code structure, or best practices, you MUST update the `context7.json` file in the repository root.
+
+#### When to Update context7.json
+
+Update `context7.json` whenever you:
+
+1. **Add or modify documentation** in the `docs/` folder
+2. **Add new examples** in the `examples/` folder
+3. **Change best practices** or coding patterns
+4. **Add new rules or guidelines** that AI assistants should follow
+5. **Release a new version** that should be indexed
+6. **Add or remove folders** that should be included/excluded from parsing
+
+#### Configuration Fields
+
+```json
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "Fuego",
+  "description": "A file-system based Go framework for APIs and websites, inspired by Next.js App Router",
+  "folders": ["docs", "examples"],
+  "excludeFolders": [
+    "node_modules",
+    ".git",
+    "dist",
+    "build",
+    ".github/workflows",
+    "internal/version"
+  ],
+  "excludeFiles": [
+    "CHANGELOG.md",
+    "LICENSE",
+    "CONTRIBUTING.md"
+  ],
+  "rules": [
+    "Always use file-based routing under the app/ directory",
+    "Route handlers must be named after HTTP methods (Get, Post, Put, Delete, etc.)",
+    "Use fuego.Context for handling requests and responses"
+  ],
+  "previousVersions": [
+    {
+      "tag": "v0.4.3"
+    }
+  ]
+}
+```
+
+#### Key Fields to Maintain
+
+- **`rules`**: Add new best practices or update existing ones when coding patterns change
+- **`previousVersions`**: Add new version tags when releasing (keep the last 3-5 major versions)
+- **`folders`**: Update if you add new documentation directories
+- **`excludeFolders`**: Update if you add new build/test directories to exclude
+
+#### After Updating context7.json
+
+1. Commit and push the changes
+2. Go to [Context7 Dashboard](https://context7.com/dashboard)
+3. Find "Fuego" and click "Refresh" to re-index the documentation
+4. Verify the changes appear in the indexed content
+
+### How Developers Use Context7
+
+Developers can get Fuego documentation in their AI assistants by adding `use context7` to their prompts:
+
+```
+Create a new API route with authentication middleware using Fuego. use context7
+```
+
+```
+Set up a full-stack page with HTMX and Tailwind using Fuego. use context7
+```
+
+The AI assistant will automatically receive:
+- Current documentation from `docs/` folder
+- Working examples from `examples/` folder
+- Best practices from the `rules` array
+- Version-specific information
+
+### Quality Guidelines
+
+When updating `context7.json`:
+
+1. **Keep rules concise** - Each rule should be one clear sentence
+2. **Be specific** - Instead of "Use good practices", say "Always call .close() on Redis connections"
+3. **Exclude noise** - Add chatty/large files to `excludeFiles` (changelogs, license files)
+4. **Test with AI** - After updates, test a few prompts with Context7 to ensure quality
+5. **Maintain versions** - Keep at least 3 recent versions available for users on older releases
