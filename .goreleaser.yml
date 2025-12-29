@@ -64,7 +64,7 @@ brews:
   - name: fuego
     repository:
       owner: abdul-hamid-achik
-      name: fuego-tap
+      name: homebrew-fuego-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/abdul-hamid-achik/fuego
     description: A file-system based Go framework for APIs and websites
