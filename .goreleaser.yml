@@ -60,14 +60,23 @@ release:
   prerelease: auto
   name_template: "{{.ProjectName}} v{{.Version}}"
 
-brews:
-  - name: fuego-cli
+homebrew_casks:
+  - name: fuego
+    ids:
+      - default
+    binaries:
+      - fuego
     repository:
       owner: abdul-hamid-achik
       name: homebrew-fuego-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/abdul-hamid-achik/fuego
     description: A file-system based Go framework for APIs and websites
-    license: MIT
-    install: |
-      bin.install "fuego"
+    commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
+    directory: Casks
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/fuego"]
+          end
