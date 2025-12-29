@@ -418,3 +418,217 @@ func TestExtractParams(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerateRoutesFile(t *testing.T) {
+	t.Run("empty routes", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		outputPath := filepath.Join(tmpDir, "fuego_routes.go")
+
+		result, err := GenerateRoutesFile(RoutesGenConfig{
+			OutputPath: outputPath,
+		})
+
+		if err != nil {
+			t.Fatalf("GenerateRoutesFile() error = %v", err)
+		}
+
+		if len(result.Files) != 1 {
+			t.Errorf("Expected 1 file, got %d", len(result.Files))
+		}
+
+		content, err := os.ReadFile(outputPath)
+		if err != nil {
+			t.Fatalf("Failed to read file: %v", err)
+		}
+
+		if !strings.Contains(string(content), "func RegisterRoutes(") {
+			t.Error("Expected file to contain RegisterRoutes function")
+		}
+	})
+
+	t.Run("with routes", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		outputPath := filepath.Join(tmpDir, "fuego_routes.go")
+
+		result, err := GenerateRoutesFile(RoutesGenConfig{
+			ModuleName: "testapp",
+			OutputPath: outputPath,
+			Routes: []RouteRegistration{
+				{
+					ImportPath: "testapp/app/api/health",
+					Package:    "health",
+					Method:     "GET",
+					Pattern:    "/api/health",
+					Handler:    "Get",
+					FilePath:   "app/api/health/route.go",
+				},
+				{
+					ImportPath: "testapp/app/api/users",
+					Package:    "users",
+					Method:     "GET",
+					Pattern:    "/api/users",
+					Handler:    "Get",
+					FilePath:   "app/api/users/route.go",
+				},
+				{
+					ImportPath: "testapp/app/api/users",
+					Package:    "users",
+					Method:     "POST",
+					Pattern:    "/api/users",
+					Handler:    "Post",
+					FilePath:   "app/api/users/route.go",
+				},
+			},
+		})
+
+		if err != nil {
+			t.Fatalf("GenerateRoutesFile() error = %v", err)
+		}
+
+		if len(result.Files) != 1 {
+			t.Errorf("Expected 1 file, got %d", len(result.Files))
+		}
+
+		content, err := os.ReadFile(outputPath)
+		if err != nil {
+			t.Fatalf("Failed to read file: %v", err)
+		}
+
+		contentStr := string(content)
+
+		// Check imports
+		if !strings.Contains(contentStr, `"testapp/app/api/health"`) {
+			t.Error("Expected file to import health package")
+		}
+		if !strings.Contains(contentStr, `"testapp/app/api/users"`) {
+			t.Error("Expected file to import users package")
+		}
+
+		// Check route registrations
+		if !strings.Contains(contentStr, `RegisterRoute("GET", "/api/health"`) {
+			t.Error("Expected file to register GET /api/health")
+		}
+		if !strings.Contains(contentStr, `RegisterRoute("GET", "/api/users"`) {
+			t.Error("Expected file to register GET /api/users")
+		}
+		if !strings.Contains(contentStr, `RegisterRoute("POST", "/api/users"`) {
+			t.Error("Expected file to register POST /api/users")
+		}
+	})
+
+	t.Run("with middleware", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		outputPath := filepath.Join(tmpDir, "fuego_routes.go")
+
+		result, err := GenerateRoutesFile(RoutesGenConfig{
+			ModuleName: "testapp",
+			OutputPath: outputPath,
+			Routes: []RouteRegistration{
+				{
+					ImportPath: "testapp/app/api/health",
+					Package:    "health",
+					Method:     "GET",
+					Pattern:    "/api/health",
+					Handler:    "Get",
+					FilePath:   "app/api/health/route.go",
+				},
+			},
+			Middlewares: []MiddlewareRegistration{
+				{
+					ImportPath: "testapp/app/api",
+					Package:    "api",
+					PathPrefix: "/api",
+					FilePath:   "app/api/middleware.go",
+				},
+			},
+		})
+
+		if err != nil {
+			t.Fatalf("GenerateRoutesFile() error = %v", err)
+		}
+
+		content, err := os.ReadFile(outputPath)
+		if err != nil {
+			t.Fatalf("Failed to read file: %v", err)
+		}
+
+		contentStr := string(content)
+
+		// Check middleware registration
+		if !strings.Contains(contentStr, `AddMiddleware("/api"`) {
+			t.Error("Expected file to register middleware for /api")
+		}
+
+		_ = result
+	})
+
+	t.Run("with proxy", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		outputPath := filepath.Join(tmpDir, "fuego_routes.go")
+
+		result, err := GenerateRoutesFile(RoutesGenConfig{
+			ModuleName: "testapp",
+			OutputPath: outputPath,
+			Routes: []RouteRegistration{
+				{
+					ImportPath: "testapp/app/api/health",
+					Package:    "health",
+					Method:     "GET",
+					Pattern:    "/api/health",
+					Handler:    "Get",
+					FilePath:   "app/api/health/route.go",
+				},
+			},
+			Proxy: &ProxyRegistration{
+				ImportPath: "testapp/app",
+				Package:    "app",
+				FilePath:   "app/proxy.go",
+				HasConfig:  true,
+			},
+		})
+
+		if err != nil {
+			t.Fatalf("GenerateRoutesFile() error = %v", err)
+		}
+
+		content, err := os.ReadFile(outputPath)
+		if err != nil {
+			t.Fatalf("Failed to read file: %v", err)
+		}
+
+		contentStr := string(content)
+
+		// Check proxy registration with config
+		if !strings.Contains(contentStr, `SetProxy(`) {
+			t.Error("Expected file to call SetProxy")
+		}
+		if !strings.Contains(contentStr, `ProxyConfig`) {
+			t.Error("Expected file to use ProxyConfig")
+		}
+
+		_ = result
+	})
+}
+
+func TestDirToPattern(t *testing.T) {
+	tests := []struct {
+		dir    string
+		appDir string
+		want   string
+	}{
+		{"app/api/users", "app", "/api/users"},
+		{"app/api/users/[id]", "app", "/api/users/{id}"},
+		{"app/api/docs/[...slug]", "app", "/api/docs/*"},
+		{"app/api/(admin)/settings", "app", "/api/settings"},
+		{"app", "app", "/"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.dir, func(t *testing.T) {
+			got := dirToPattern(tt.dir, tt.appDir)
+			if got != tt.want {
+				t.Errorf("dirToPattern(%q, %q) = %q, want %q", tt.dir, tt.appDir, got, tt.want)
+			}
+		})
+	}
+}

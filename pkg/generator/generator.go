@@ -2,7 +2,12 @@
 package generator
 
 import (
+	"bufio"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -420,4 +425,586 @@ func toTitle(s string) string {
 		}
 	}
 	return strings.Join(words, " ")
+}
+
+// RouteRegistration holds information needed to generate route registration code.
+type RouteRegistration struct {
+	ImportPath  string // Full import path for the package
+	ImportAlias string // Alias for the import (to avoid conflicts)
+	Package     string // Package name
+	Method      string // HTTP method (GET, POST, etc.)
+	Pattern     string // Route pattern (/api/users/{id})
+	Handler     string // Handler function name (Get, Post, etc.)
+	FilePath    string // Source file path (for comments)
+}
+
+// MiddlewareRegistration holds information for middleware registration.
+type MiddlewareRegistration struct {
+	ImportPath  string // Full import path
+	ImportAlias string // Alias for the import
+	Package     string // Package name
+	PathPrefix  string // Path prefix the middleware applies to
+	FilePath    string // Source file path
+}
+
+// ProxyRegistration holds information for proxy registration.
+type ProxyRegistration struct {
+	ImportPath  string // Full import path
+	ImportAlias string // Alias for the import
+	Package     string // Package name
+	FilePath    string // Source file path
+	HasConfig   bool   // Whether ProxyConfig is defined
+}
+
+// RoutesGenConfig holds configuration for generating the routes file.
+type RoutesGenConfig struct {
+	ModuleName  string                   // Go module name (from go.mod)
+	AppDir      string                   // App directory (default: "app")
+	OutputPath  string                   // Output file path (default: "fuego_routes.go")
+	Routes      []RouteRegistration      // Discovered routes
+	Middlewares []MiddlewareRegistration // Discovered middlewares
+	Proxy       *ProxyRegistration       // Discovered proxy (optional)
+}
+
+// GenerateRoutesFile generates the fuego_routes.go file that registers all routes.
+func GenerateRoutesFile(cfg RoutesGenConfig) (*Result, error) {
+	if cfg.OutputPath == "" {
+		cfg.OutputPath = "fuego_routes.go"
+	}
+
+	// Check if we have any routes to register
+	if len(cfg.Routes) == 0 && len(cfg.Middlewares) == 0 && cfg.Proxy == nil {
+		// No routes found, create a minimal file
+		if err := executeTemplate(cfg.OutputPath, emptyRoutesTemplate, nil); err != nil {
+			return nil, err
+		}
+		return &Result{Files: []string{cfg.OutputPath}}, nil
+	}
+
+	// Group routes by import path to avoid duplicate imports
+	imports := make(map[string]string) // importPath -> alias
+	aliasCounter := make(map[string]int)
+
+	for i := range cfg.Routes {
+		r := &cfg.Routes[i]
+		if _, ok := imports[r.ImportPath]; !ok {
+			alias := r.Package
+			// Handle alias conflicts
+			if count, exists := aliasCounter[alias]; exists {
+				aliasCounter[alias] = count + 1
+				alias = fmt.Sprintf("%s%d", alias, count+1)
+			} else {
+				aliasCounter[alias] = 1
+			}
+			imports[r.ImportPath] = alias
+		}
+		r.ImportAlias = imports[r.ImportPath]
+	}
+
+	for i := range cfg.Middlewares {
+		m := &cfg.Middlewares[i]
+		if _, ok := imports[m.ImportPath]; !ok {
+			alias := m.Package
+			if count, exists := aliasCounter[alias]; exists {
+				aliasCounter[alias] = count + 1
+				alias = fmt.Sprintf("%s%d", alias, count+1)
+			} else {
+				aliasCounter[alias] = 1
+			}
+			imports[m.ImportPath] = alias
+		}
+		m.ImportAlias = imports[m.ImportPath]
+	}
+
+	if cfg.Proxy != nil {
+		if _, ok := imports[cfg.Proxy.ImportPath]; !ok {
+			alias := cfg.Proxy.Package
+			if count, exists := aliasCounter[alias]; exists {
+				aliasCounter[alias] = count + 1
+				alias = fmt.Sprintf("%s%d", alias, count+1)
+			} else {
+				aliasCounter[alias] = 1
+			}
+			imports[cfg.Proxy.ImportPath] = alias
+		}
+		cfg.Proxy.ImportAlias = imports[cfg.Proxy.ImportPath]
+	}
+
+	// Build import list
+	type importEntry struct {
+		Alias string
+		Path  string
+	}
+	var importList []importEntry
+	for path, alias := range imports {
+		importList = append(importList, importEntry{Alias: alias, Path: path})
+	}
+
+	data := struct {
+		Imports     []importEntry
+		Routes      []RouteRegistration
+		Middlewares []MiddlewareRegistration
+		Proxy       *ProxyRegistration
+	}{
+		Imports:     importList,
+		Routes:      cfg.Routes,
+		Middlewares: cfg.Middlewares,
+		Proxy:       cfg.Proxy,
+	}
+
+	if err := executeTemplate(cfg.OutputPath, routesGenTemplate, data); err != nil {
+		return nil, err
+	}
+
+	return &Result{Files: []string{cfg.OutputPath}}, nil
+}
+
+// HTTP method to function name mapping
+var httpMethods = map[string]string{
+	"Get":     http.MethodGet,
+	"Post":    http.MethodPost,
+	"Put":     http.MethodPut,
+	"Patch":   http.MethodPatch,
+	"Delete":  http.MethodDelete,
+	"Head":    http.MethodHead,
+	"Options": http.MethodOptions,
+}
+
+// ScanAndGenerateRoutes scans the app directory and generates the routes file.
+func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
+	// Get the module name from go.mod
+	moduleName, err := getModuleName()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module name: %w", err)
+	}
+
+	if appDir == "" {
+		appDir = "app"
+	}
+
+	cfg := RoutesGenConfig{
+		ModuleName: moduleName,
+		AppDir:     appDir,
+		OutputPath: outputPath,
+	}
+
+	// Check if app directory exists
+	if _, err := os.Stat(appDir); os.IsNotExist(err) {
+		return GenerateRoutesFile(cfg)
+	}
+
+	fset := token.NewFileSet()
+
+	// Scan for routes and middleware
+	err = filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip hidden files and directories
+		if strings.HasPrefix(info.Name(), ".") {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip private folders
+		if info.IsDir() && strings.HasPrefix(info.Name(), "_") {
+			return filepath.SkipDir
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		switch info.Name() {
+		case "route.go":
+			routes, err := scanRouteFile(fset, path, appDir, moduleName)
+			if err != nil {
+				return err
+			}
+			cfg.Routes = append(cfg.Routes, routes...)
+
+		case "middleware.go":
+			mw, err := scanMiddlewareFile(fset, path, appDir, moduleName)
+			if err != nil {
+				return err
+			}
+			if mw != nil {
+				cfg.Middlewares = append(cfg.Middlewares, *mw)
+			}
+
+		case "proxy.go":
+			// Only handle proxy.go in app root
+			if filepath.Dir(path) == appDir {
+				proxy, err := scanProxyFile(fset, path, moduleName)
+				if err != nil {
+					return err
+				}
+				cfg.Proxy = proxy
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan app directory: %w", err)
+	}
+
+	return GenerateRoutesFile(cfg)
+}
+
+// getModuleName reads the module name from go.mod
+func getModuleName() (string, error) {
+	f, err := os.Open("go.mod")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module ")), nil
+		}
+	}
+
+	return "", fmt.Errorf("module name not found in go.mod")
+}
+
+// scanRouteFile scans a route.go file for handler functions
+func scanRouteFile(fset *token.FileSet, filePath, appDir, moduleName string) ([]RouteRegistration, error) {
+	file, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse %s: %w", filePath, err)
+	}
+
+	// Get the route pattern and import path
+	relDir, err := filepath.Rel(".", filepath.Dir(filePath))
+	if err != nil {
+		return nil, err
+	}
+	importPath := moduleName + "/" + filepath.ToSlash(relDir)
+	pattern := dirToPattern(filepath.Dir(filePath), appDir)
+	pkgName := file.Name.Name
+
+	var routes []RouteRegistration
+
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || !fn.Name.IsExported() {
+			continue
+		}
+
+		method, ok := httpMethods[fn.Name.Name]
+		if !ok {
+			continue
+		}
+
+		if !isValidHandlerSignature(fn) {
+			continue
+		}
+
+		routes = append(routes, RouteRegistration{
+			ImportPath: importPath,
+			Package:    pkgName,
+			Method:     method,
+			Pattern:    pattern,
+			Handler:    fn.Name.Name,
+			FilePath:   filePath,
+		})
+	}
+
+	return routes, nil
+}
+
+// scanMiddlewareFile scans a middleware.go file
+func scanMiddlewareFile(fset *token.FileSet, filePath, appDir, moduleName string) (*MiddlewareRegistration, error) {
+	file, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse %s: %w", filePath, err)
+	}
+
+	// Get the path prefix and import path
+	relDir, err := filepath.Rel(".", filepath.Dir(filePath))
+	if err != nil {
+		return nil, err
+	}
+	importPath := moduleName + "/" + filepath.ToSlash(relDir)
+	pathPrefix := dirToPattern(filepath.Dir(filePath), appDir)
+	pkgName := file.Name.Name
+
+	// Look for Middleware function
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+
+		if fn.Name.Name != "Middleware" {
+			continue
+		}
+
+		if !isValidMiddlewareSignature(fn) {
+			continue
+		}
+
+		return &MiddlewareRegistration{
+			ImportPath: importPath,
+			Package:    pkgName,
+			PathPrefix: pathPrefix,
+			FilePath:   filePath,
+		}, nil
+	}
+
+	return nil, nil
+}
+
+// scanProxyFile scans a proxy.go file
+func scanProxyFile(fset *token.FileSet, filePath, moduleName string) (*ProxyRegistration, error) {
+	file, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse %s: %w", filePath, err)
+	}
+
+	relDir, err := filepath.Rel(".", filepath.Dir(filePath))
+	if err != nil {
+		return nil, err
+	}
+	importPath := moduleName + "/" + filepath.ToSlash(relDir)
+	pkgName := file.Name.Name
+
+	var hasProxy bool
+	var hasConfig bool
+
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Name.Name == "Proxy" && isValidProxySignature(d) {
+				hasProxy = true
+			}
+		case *ast.GenDecl:
+			if d.Tok == token.VAR {
+				for _, spec := range d.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for _, name := range vs.Names {
+						if name.Name == "ProxyConfig" {
+							hasConfig = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if !hasProxy {
+		return nil, nil
+	}
+
+	return &ProxyRegistration{
+		ImportPath: importPath,
+		Package:    pkgName,
+		FilePath:   filePath,
+		HasConfig:  hasConfig,
+	}, nil
+}
+
+// dirToPattern converts a directory path to a route pattern
+func dirToPattern(dir, appDir string) string {
+	rel, err := filepath.Rel(appDir, dir)
+	if err != nil || rel == "." {
+		return "/"
+	}
+
+	segments := strings.Split(rel, string(filepath.Separator))
+	var routeSegments []string
+
+	for _, seg := range segments {
+		// Skip route groups (folder) - they don't affect the URL
+		if strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")") {
+			continue
+		}
+
+		// Handle optional catch-all [[...param]]
+		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
+			routeSegments = append(routeSegments, "*")
+			continue
+		}
+
+		// Handle catch-all [...param]
+		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			routeSegments = append(routeSegments, "*")
+			continue
+		}
+
+		// Handle dynamic segment [param]
+		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			routeSegments = append(routeSegments, "{"+matches[1]+"}")
+			continue
+		}
+
+		routeSegments = append(routeSegments, seg)
+	}
+
+	if len(routeSegments) == 0 {
+		return "/"
+	}
+
+	return "/" + strings.Join(routeSegments, "/")
+}
+
+// isValidHandlerSignature checks if a function has the signature: func(c *fuego.Context) error
+func isValidHandlerSignature(fn *ast.FuncDecl) bool {
+	if fn.Type.Params == nil || len(fn.Type.Params.List) != 1 {
+		return false
+	}
+
+	param := fn.Type.Params.List[0]
+	starExpr, ok := param.Type.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+
+	switch x := starExpr.X.(type) {
+	case *ast.SelectorExpr:
+		if ident, ok := x.X.(*ast.Ident); ok {
+			if ident.Name == "fuego" && x.Sel.Name == "Context" {
+				goto checkReturn
+			}
+		}
+	case *ast.Ident:
+		if x.Name == "Context" {
+			goto checkReturn
+		}
+	}
+	return false
+
+checkReturn:
+	if fn.Type.Results == nil || len(fn.Type.Results.List) != 1 {
+		return false
+	}
+
+	result := fn.Type.Results.List[0]
+	if ident, ok := result.Type.(*ast.Ident); ok {
+		return ident.Name == "error"
+	}
+
+	return false
+}
+
+// isValidMiddlewareSignature checks if a function has the correct middleware signature
+func isValidMiddlewareSignature(fn *ast.FuncDecl) bool {
+	// Check for: func(next fuego.HandlerFunc) fuego.HandlerFunc
+	if fn.Type.Params == nil || len(fn.Type.Params.List) != 1 {
+		return false
+	}
+
+	// Check parameter type
+	param := fn.Type.Params.List[0]
+	switch x := param.Type.(type) {
+	case *ast.SelectorExpr:
+		if ident, ok := x.X.(*ast.Ident); ok {
+			if !(ident.Name == "fuego" && x.Sel.Name == "HandlerFunc") {
+				return false
+			}
+		} else {
+			return false
+		}
+	case *ast.Ident:
+		if x.Name != "HandlerFunc" {
+			return false
+		}
+	default:
+		return false
+	}
+
+	// Check return type
+	if fn.Type.Results == nil || len(fn.Type.Results.List) != 1 {
+		return false
+	}
+
+	result := fn.Type.Results.List[0]
+	switch x := result.Type.(type) {
+	case *ast.SelectorExpr:
+		if ident, ok := x.X.(*ast.Ident); ok {
+			return ident.Name == "fuego" && x.Sel.Name == "HandlerFunc"
+		}
+	case *ast.Ident:
+		return x.Name == "HandlerFunc"
+	}
+
+	return false
+}
+
+// isValidProxySignature checks if a function has the correct proxy signature
+func isValidProxySignature(fn *ast.FuncDecl) bool {
+	if fn.Type.Params == nil || len(fn.Type.Params.List) != 1 {
+		return false
+	}
+
+	param := fn.Type.Params.List[0]
+	starExpr, ok := param.Type.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+
+	switch x := starExpr.X.(type) {
+	case *ast.SelectorExpr:
+		if ident, ok := x.X.(*ast.Ident); ok {
+			if !(ident.Name == "fuego" && x.Sel.Name == "Context") {
+				return false
+			}
+		} else {
+			return false
+		}
+	case *ast.Ident:
+		if x.Name != "Context" {
+			return false
+		}
+	default:
+		return false
+	}
+
+	// Check return types: (*ProxyResult, error)
+	if fn.Type.Results == nil || len(fn.Type.Results.List) != 2 {
+		return false
+	}
+
+	// First return: *ProxyResult
+	result0 := fn.Type.Results.List[0]
+	starResult, ok := result0.Type.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+
+	switch x := starResult.X.(type) {
+	case *ast.SelectorExpr:
+		if ident, ok := x.X.(*ast.Ident); ok {
+			if !(ident.Name == "fuego" && x.Sel.Name == "ProxyResult") {
+				return false
+			}
+		} else {
+			return false
+		}
+	case *ast.Ident:
+		if x.Name != "ProxyResult" {
+			return false
+		}
+	default:
+		return false
+	}
+
+	// Second return: error
+	result1 := fn.Type.Results.List[1]
+	if ident, ok := result1.Type.(*ast.Ident); ok {
+		return ident.Name == "error"
+	}
+
+	return false
 }

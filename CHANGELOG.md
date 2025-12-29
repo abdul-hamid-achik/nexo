@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2024-12-29
+
+### Added
+
+- **Code generation for routes** - Routes are now registered via generated `fuego_routes.go` file
+  - `fuego dev` automatically generates routes before starting the server
+  - Routes are regenerated on file changes (route.go, middleware.go, proxy.go)
+  - Generated file imports route packages and calls actual handlers
+- **Auto-detection of local fuego module** - `fuego dev` automatically adds `replace` directive when fuego module isn't published
+  - Searches common development directories for fuego source
+  - Uses `runtime.Caller` to detect source location when running from source
+- `ScanAndGenerateRoutes()` function for programmatic route generation
+- `GenerateRoutesFile()` for custom route file generation
+- New tests for route generation functionality
+
+### Changed
+
+- `fuego new` template now generates `main.go` that calls `RegisterRoutes(app)`
+- `App.Listen()` skips scanning if routes are already registered (enables code generation)
+- `.gitignore` template now includes `fuego_routes.go`
+
+### Fixed
+
+- **Routes returning 404** - Fixed issue where file-based routes returned placeholder handlers instead of actual handlers
+  - Root cause: Go cannot dynamically import functions at runtime
+  - Solution: Code generation imports and registers actual handlers
+
 ## [0.2.0] - 2024-12-29
 
 ### Added
@@ -91,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Built on chi router
 - 137+ test cases
 
-[Unreleased]: https://github.com/abdul-hamid-achik/fuego/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/abdul-hamid-achik/fuego/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/abdul-hamid-achik/fuego/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/abdul-hamid-achik/fuego/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/abdul-hamid-achik/fuego/releases/tag/v0.1.0

@@ -118,9 +118,13 @@ func (a *App) Listen(addr ...string) error {
 		address = addr[0]
 	}
 
-	// Scan and register routes
-	if err := a.Scan(); err != nil {
-		return fmt.Errorf("failed to scan routes: %w", err)
+	// Only scan if no routes have been registered yet
+	// This allows RegisterRoutes() to be called before Listen() to register
+	// the actual handlers instead of placeholders
+	if len(a.routeTree.routes) == 0 {
+		if err := a.Scan(); err != nil {
+			return fmt.Errorf("failed to scan routes: %w", err)
+		}
 	}
 
 	// Mount routes to router
