@@ -241,7 +241,7 @@ func GeneratePage(cfg PageConfig) (*Result, error) {
 	}
 
 	// Generate title from path
-	title := strings.Title(strings.ReplaceAll(filepath.Base(cfg.Path), "-", " "))
+	title := toTitle(strings.ReplaceAll(filepath.Base(cfg.Path), "-", " "))
 	if title == "" || title == "." {
 		title = "Home"
 	}
@@ -406,4 +406,18 @@ func executeTemplate(filePath, tmplContent string, data any) error {
 	}
 
 	return nil
+}
+
+// toTitle converts a string to title case (first letter of each word capitalized)
+func toTitle(s string) string {
+	if s == "" {
+		return ""
+	}
+	words := strings.Fields(s)
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(string(word[0])) + strings.ToLower(word[1:])
+		}
+	}
+	return strings.Join(words, " ")
 }

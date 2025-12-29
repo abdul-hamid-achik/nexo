@@ -116,12 +116,3 @@ func printSuccess(data any) {
 func printJSONError(err error) {
 	printJSON(JSONResponse{Success: false, Error: err.Error()})
 }
-
-// outputError handles error output in both JSON and text modes
-func outputError(err error) {
-	if jsonOutput {
-		printJSONError(err)
-	} else {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-	}
-}
