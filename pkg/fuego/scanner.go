@@ -582,7 +582,7 @@ checkReturn:
 	switch x := starResult.X.(type) {
 	case *ast.SelectorExpr:
 		if ident, ok := x.X.(*ast.Ident); ok {
-			if !(ident.Name == "fuego" && x.Sel.Name == "ProxyResult") {
+			if ident.Name != "fuego" || x.Sel.Name != "ProxyResult" {
 				return false
 			}
 		} else {

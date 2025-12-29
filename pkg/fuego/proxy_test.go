@@ -602,7 +602,7 @@ func TestExecuteProxyRedirectWithMultipleHeaders(t *testing.T) {
 			WithHeader("X-Header-2", "value2"), nil
 	}
 
-	executeProxy(ctx, proxy, nil)
+	_, _ = executeProxy(ctx, proxy, nil)
 
 	if w.Header().Get("X-Header-1") != "value1" {
 		t.Errorf("expected X-Header-1 = value1, got %q", w.Header().Get("X-Header-1"))
