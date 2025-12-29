@@ -60,21 +60,17 @@ release:
   prerelease: auto
   name_template: "{{.ProjectName}} v{{.Version}}"
 
-# Homebrew tap publishing requires a PAT with repo scope
-# To enable:
-# 1. Create PAT at https://github.com/settings/tokens with 'repo' scope
-# 2. Add it as repository secret named HOMEBREW_TAP_TOKEN
-# 3. Update release.yml to use GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-# 4. Uncomment below:
-#
-# brews:
-#   - name: fuego
-#     repository:
-#       owner: abdul-hamid-achik
-#       name: homebrew-tap
-#     homepage: https://github.com/abdul-hamid-achik/fuego
-#     description: A file-system based Go framework for APIs and websites
-#     license: MIT
-#     skip_upload: auto
-#     install: |
-#       bin.install "fuego"
+brews:
+  - name: fuego
+    repository:
+      owner: abdul-hamid-achik
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/abdul-hamid-achik/fuego
+    description: A file-system based Go framework for APIs and websites
+    license: MIT
+    skip_upload: auto
+    install: |
+      bin.install "fuego"
+    test: |
+      system "#{bin}/fuego", "--version"
