@@ -152,7 +152,7 @@ func RecoverWithConfig(config RecoverConfig) MiddlewareFunc {
 
 func defaultPanicHandler(c *Context, err any) {
 	if !c.Written() {
-		c.Error(http.StatusInternalServerError, "internal server error")
+		_ = c.Error(http.StatusInternalServerError, "internal server error")
 	}
 }
 

@@ -397,7 +397,7 @@ func executeProxy(c *Context, proxy ProxyFunc, config *ProxyConfig) (bool, error
 		}
 		c.Response.WriteHeader(result.statusCode)
 		if result.body != nil {
-			c.Response.Write(result.body)
+			_, _ = c.Response.Write(result.body)
 		}
 		return false, nil
 	}

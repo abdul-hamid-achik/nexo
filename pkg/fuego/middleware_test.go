@@ -558,7 +558,7 @@ func TestRecoverWithConfig_CustomHandler(t *testing.T) {
 	mw := RecoverWithConfig(RecoverConfig{
 		ErrorHandler: func(c *Context, recovered any) {
 			customHandlerCalled = true
-			c.JSON(http.StatusInternalServerError, map[string]string{
+			_ = c.JSON(http.StatusInternalServerError, map[string]string{
 				"error": "custom handled",
 			})
 		},

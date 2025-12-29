@@ -260,7 +260,7 @@ func TestApp_ListenWithMiddlewareChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -298,7 +298,7 @@ func TestIntegration_ProxyRewriteThenRoute(t *testing.T) {
 	app := New()
 
 	// Proxy that rewrites /old/* to /new/*
-	app.SetProxy(func(c *Context) (*ProxyResult, error) {
+	_ = app.SetProxy(func(c *Context) (*ProxyResult, error) {
 		if strings.HasPrefix(c.Path(), "/old/") {
 			newPath := strings.Replace(c.Path(), "/old/", "/new/", 1)
 			return Rewrite(newPath), nil
@@ -336,7 +336,7 @@ func TestIntegration_ProxyRewriteThenRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Errorf("expected status 200 after rewrite, got %d", resp.StatusCode)
@@ -368,7 +368,7 @@ func TestIntegration_ProxyRedirect(t *testing.T) {
 	app := New()
 
 	// Proxy that redirects /legacy to /modern
-	app.SetProxy(func(c *Context) (*ProxyResult, error) {
+	_ = app.SetProxy(func(c *Context) (*ProxyResult, error) {
 		if c.Path() == "/legacy" {
 			return Redirect("/modern", 301), nil
 		}
@@ -411,7 +411,7 @@ func TestIntegration_ProxyRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 301 {
 		t.Errorf("expected status 301, got %d", resp.StatusCode)
@@ -503,7 +503,7 @@ func TestIntegration_MiddlewareChainOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Verify middleware execution order
 	expected := []string{"mw1-before", "mw2-before", "handler", "mw2-after", "mw1-after"}

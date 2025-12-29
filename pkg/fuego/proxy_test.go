@@ -218,7 +218,7 @@ func TestProxyConfigMatches(t *testing.T) {
 			"/admin/*",
 		},
 	}
-	config.Compile()
+	_ = config.Compile()
 
 	tests := []struct {
 		path     string
@@ -244,7 +244,7 @@ func TestProxyConfigMatches(t *testing.T) {
 func TestProxyConfigMatchesAll(t *testing.T) {
 	// Empty config should match all
 	config := &ProxyConfig{}
-	config.Compile()
+	_ = config.Compile()
 
 	if !config.Matches("/any/path") {
 		t.Error("empty config should match all paths")
