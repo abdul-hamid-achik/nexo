@@ -662,7 +662,7 @@ func getModuleName() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -910,7 +910,7 @@ func isValidMiddlewareSignature(fn *ast.FuncDecl) bool {
 	switch x := param.Type.(type) {
 	case *ast.SelectorExpr:
 		if ident, ok := x.X.(*ast.Ident); ok {
-			if !(ident.Name == "fuego" && x.Sel.Name == "HandlerFunc") {
+			if ident.Name != "fuego" || x.Sel.Name != "HandlerFunc" {
 				return false
 			}
 		} else {
@@ -957,7 +957,7 @@ func isValidProxySignature(fn *ast.FuncDecl) bool {
 	switch x := starExpr.X.(type) {
 	case *ast.SelectorExpr:
 		if ident, ok := x.X.(*ast.Ident); ok {
-			if !(ident.Name == "fuego" && x.Sel.Name == "Context") {
+			if ident.Name != "fuego" || x.Sel.Name != "Context" {
 				return false
 			}
 		} else {
@@ -986,7 +986,7 @@ func isValidProxySignature(fn *ast.FuncDecl) bool {
 	switch x := starResult.X.(type) {
 	case *ast.SelectorExpr:
 		if ident, ok := x.X.(*ast.Ident); ok {
-			if !(ident.Name == "fuego" && x.Sel.Name == "ProxyResult") {
+			if ident.Name != "fuego" || x.Sel.Name != "ProxyResult" {
 				return false
 			}
 		} else {

@@ -97,7 +97,7 @@ func ensureFuegoModule() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	replaceLine := fmt.Sprintf("\nreplace github.com/abdul-hamid-achik/fuego => %s\n", fuegoPath)
 	if _, err := f.WriteString(replaceLine); err != nil {
@@ -186,7 +186,7 @@ func isValidFuegoSource(dir string) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
