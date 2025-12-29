@@ -60,16 +60,14 @@ release:
   prerelease: auto
   name_template: "{{.ProjectName}} v{{.Version}}"
 
-# Homebrew tap publishing - disabled until homebrew-tap repo is created
-# To enable: create repo abdul-hamid-achik/homebrew-tap and uncomment below
-# brews:
-#   - name: fuego
-#     repository:
-#       owner: abdul-hamid-achik
-#       name: homebrew-tap
-#     homepage: https://github.com/abdul-hamid-achik/fuego
-#     description: A file-system based Go framework for APIs and websites
-#     license: MIT
-#     skip_upload: auto
-#     install: |
-#       bin.install "fuego"
+brews:
+  - name: fuego
+    repository:
+      owner: abdul-hamid-achik
+      name: homebrew-tap
+    homepage: https://github.com/abdul-hamid-achik/fuego
+    description: A file-system based Go framework for APIs and websites
+    license: MIT
+    skip_upload: auto
+    install: |
+      bin.install "fuego"
