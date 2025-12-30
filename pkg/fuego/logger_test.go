@@ -96,9 +96,9 @@ func TestDefaultRequestLoggerConfig(t *testing.T) {
 	})
 
 	t.Run("dev mode sets debug level", func(t *testing.T) {
-		os.Unsetenv("FUEGO_LOG_LEVEL")
-		os.Setenv("FUEGO_DEV", "true")
-		os.Unsetenv("GO_ENV")
+		_ = os.Unsetenv("FUEGO_LOG_LEVEL")
+		_ = os.Setenv("FUEGO_DEV", "true")
+		_ = os.Unsetenv("GO_ENV")
 
 		config := DefaultRequestLoggerConfig()
 
@@ -108,9 +108,9 @@ func TestDefaultRequestLoggerConfig(t *testing.T) {
 	})
 
 	t.Run("production sets warn level", func(t *testing.T) {
-		os.Unsetenv("FUEGO_LOG_LEVEL")
-		os.Unsetenv("FUEGO_DEV")
-		os.Setenv("GO_ENV", "production")
+		_ = os.Unsetenv("FUEGO_LOG_LEVEL")
+		_ = os.Unsetenv("FUEGO_DEV")
+		_ = os.Setenv("GO_ENV", "production")
 
 		config := DefaultRequestLoggerConfig()
 
@@ -120,8 +120,8 @@ func TestDefaultRequestLoggerConfig(t *testing.T) {
 	})
 
 	t.Run("FUEGO_LOG_LEVEL overrides", func(t *testing.T) {
-		os.Setenv("FUEGO_LOG_LEVEL", "error")
-		os.Setenv("FUEGO_DEV", "true") // Should be overridden
+		_ = os.Setenv("FUEGO_LOG_LEVEL", "error")
+		_ = os.Setenv("FUEGO_DEV", "true") // Should be overridden
 
 		config := DefaultRequestLoggerConfig()
 
