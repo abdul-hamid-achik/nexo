@@ -2,10 +2,10 @@
   "$schema": "https://mintlify.com/schema.json",
   "name": "Fuego",
   "logo": {
-    "dark": "/logo/dark.svg",
-    "light": "/logo/light.svg"
+    "dark": "/docs/logo/dark.svg",
+    "light": "/docs/logo/light.svg"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "/docs/favicon.svg",
   "colors": {
     "primary": "#F97316",
     "light": "#FB923C",
@@ -23,16 +23,16 @@
   ],
   "topbarCtaButton": {
     "name": "Get Started",
-    "url": "/getting-started/quickstart"
+    "url": "/docs/getting-started/quickstart"
   },
   "tabs": [
     {
       "name": "Documentation",
-      "url": "/"
+      "url": "/docs"
     },
     {
       "name": "API Reference",
-      "url": "/api"
+      "url": "/docs/api"
     }
   ],
   "anchors": [
@@ -51,29 +51,29 @@
     {
       "group": "Getting Started",
       "pages": [
-        "introduction",
-        "getting-started/quickstart",
-        "getting-started/familiar-patterns"
+        "docs/introduction",
+        "docs/getting-started/quickstart",
+        "docs/getting-started/familiar-patterns"
       ]
     },
     {
       "group": "Core Concepts",
       "pages": [
-        "routing/file-based",
-        "middleware/overview",
-        "middleware/proxy"
+        "docs/routing/file-based",
+        "docs/middleware/overview",
+        "docs/middleware/proxy"
       ]
     },
     {
       "group": "Guides",
       "pages": [
-        "guides/deployment"
+        "docs/guides/deployment"
       ]
     },
     {
       "group": "API Reference",
       "pages": [
-        "api/context"
+        "docs/api/context"
       ]
     }
   ],
@@ -85,19 +85,7 @@
     "suggestEdit": true,
     "raiseIssue": true
   },
-  "analytics": {
-    "posthog": {
-      "apiKey": ""
-    }
-  },
   "seo": {
     "indexHiddenPages": false
-  },
-  "openapi": [],
-  "api": {
-    "baseUrl": "http://localhost:3000",
-    "playground": {
-      "mode": "simple"
-    }
   }
 }
