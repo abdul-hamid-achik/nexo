@@ -596,7 +596,7 @@ templ Layout(title string) {
         <meta charset="UTF-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         <title>{ title } - Fuego App</title>
-        <link rel="stylesheet" href="/static/css/output.css"/>
+        <link rel="stylesheet" href="/docs/static/css/output.css"/>
         <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     </head>
     <body class="bg-gray-100 min-h-screen">
@@ -604,14 +604,14 @@ templ Layout(title string) {
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between h-16">
                     <div class="flex">
-                        <a href="/" class="flex items-center px-2 text-xl font-bold text-orange-600">
+                        <a href="/docs/" class="flex items-center px-2 text-xl font-bold text-orange-600">
                             Fuego
                         </a>
                         <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
-                            <a href="/" class="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-900">
+                            <a href="/docs/" class="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-900">
                                 Home
                             </a>
-                            <a href="/dashboard" class="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-700">
+                            <a href="/docs/dashboard" class="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-700">
                                 Dashboard
                             </a>
                         </div>
@@ -668,7 +668,7 @@ templ Page() {
             
             <div class="mt-12">
                 <a 
-                    href="/dashboard" 
+                    href="/docs/dashboard" 
                     class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700"
                 >
                     Go to Dashboard
@@ -1534,22 +1534,22 @@ for i in {1..105}; do curl -s http://localhost:8080/api/users; done
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="File-Based Routing" icon="folder-tree" href="/routing/file-based">
+  <Card title="File-Based Routing" icon="folder-tree" href="/docs/routing/file-based">
     Learn all routing patterns in depth
   </Card>
-  <Card title="Middleware" icon="layer-group" href="/middleware/overview">
+  <Card title="Middleware" icon="layer-group" href="/docs/middleware/overview">
     Complete middleware documentation
   </Card>
-  <Card title="Proxy" icon="shield" href="/middleware/proxy">
+  <Card title="Proxy" icon="shield" href="/docs/middleware/proxy">
     Advanced proxy patterns
   </Card>
-  <Card title="Authentication" icon="lock" href="/guides/authentication">
+  <Card title="Authentication" icon="lock" href="/docs/guides/authentication">
     Complete auth implementation
   </Card>
-  <Card title="Database" icon="database" href="/guides/database">
+  <Card title="Database" icon="database" href="/docs/guides/database">
     Database integration guide
   </Card>
-  <Card title="Context API" icon="code" href="/api/context">
+  <Card title="Context API" icon="code" href="/docs/api/context">
     Full Context reference
   </Card>
 </CardGroup>

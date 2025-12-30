@@ -39,11 +39,11 @@ templ Layout(title string) {
     <!DOCTYPE html>
     <html>
     <head>
-        <link rel="stylesheet" href="/static/css/output.css"/>
-        <script src="/static/js/app.js" defer></script>
+        <link rel="stylesheet" href="/docs/static/css/output.css"/>
+        <script src="/docs/static/js/app.js" defer></script>
     </head>
     <body>
-        <img src="/static/images/logo.png" alt="Logo"/>
+        <img src="/docs/static/images/logo.png" alt="Logo"/>
         { children... }
     </body>
     </html>
@@ -157,16 +157,16 @@ CMD ["./server"]
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="Tailwind CSS" icon="paintbrush" href="/frontend/tailwind">
+  <Card title="Tailwind CSS" icon="paintbrush" href="/docs/frontend/tailwind">
     Set up Tailwind
   </Card>
-  <Card title="Templates" icon="file-code" href="/core-concepts/templates">
+  <Card title="Templates" icon="file-code" href="/docs/core-concepts/templates">
     Use static files in templates
   </Card>
-  <Card title="Deployment" icon="rocket" href="/guides/deployment">
+  <Card title="Deployment" icon="rocket" href="/docs/guides/deployment">
     Deploy with static files
   </Card>
-  <Card title="Configuration" icon="gear" href="/advanced/configuration">
+  <Card title="Configuration" icon="gear" href="/docs/advanced/configuration">
     Full configuration options
   </Card>
 </CardGroup>

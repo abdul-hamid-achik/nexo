@@ -90,13 +90,13 @@ templ Layout(title string) {
         <meta charset="UTF-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         <title>{ title } - My App</title>
-        <link rel="stylesheet" href="/static/css/output.css"/>
+        <link rel="stylesheet" href="/docs/static/css/output.css"/>
         <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     </head>
     <body class="bg-gray-100 min-h-screen">
         <nav class="bg-white shadow-sm">
             <div class="max-w-7xl mx-auto px-4">
-                <a href="/" class="text-xl font-bold">My App</a>
+                <a href="/docs/" class="text-xl font-bold">My App</a>
             </div>
         </nav>
         <main class="max-w-7xl mx-auto py-6">
@@ -122,8 +122,8 @@ templ Layout() {
     <div class="flex">
         <aside class="w-64 bg-gray-800 text-white">
             <nav>
-                <a href="/dashboard">Overview</a>
-                <a href="/dashboard/settings">Settings</a>
+                <a href="/docs/dashboard">Overview</a>
+                <a href="/docs/dashboard/settings">Settings</a>
             </nav>
         </aside>
         <div class="flex-1">
@@ -328,16 +328,16 @@ fuego generate page users/profile
 ## Next Steps
 
 <CardGroup cols={2}>
-  <Card title="HTMX Integration" icon="bolt" href="/frontend/htmx">
+  <Card title="HTMX Integration" icon="bolt" href="/docs/frontend/htmx">
     Build interactive UIs
   </Card>
-  <Card title="Tailwind CSS" icon="paintbrush" href="/frontend/tailwind">
+  <Card title="Tailwind CSS" icon="paintbrush" href="/docs/frontend/tailwind">
     Style your pages
   </Card>
-  <Card title="Forms" icon="rectangle-list" href="/frontend/forms">
+  <Card title="Forms" icon="rectangle-list" href="/docs/frontend/forms">
     Handle form submissions
   </Card>
-  <Card title="Examples" icon="code" href="/guides/examples">
+  <Card title="Examples" icon="code" href="/docs/guides/examples">
     Full-stack example
   </Card>
 </CardGroup>
