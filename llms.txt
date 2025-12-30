@@ -3,35 +3,63 @@
 > A file-system based Go framework for APIs and websites, inspired by Next.js App Router.
 > 
 > Documentation: https://gofuego.dev
+> API Reference: https://gofuego.dev/docs/api/overview
 
 ## Quick Commands
 
-Create project:       fuego new <name> [--api-only] [--with-proxy]
-Generate route:       fuego generate route <path> --methods GET,POST
-Generate middleware:  fuego generate middleware <name> --path <path> --template <template>
-Generate proxy:       fuego generate proxy --template <template>
-Generate page:        fuego generate page <path> [--with-layout]
-List routes:          fuego routes [--json]
-Start dev server:     fuego dev [--port 3000]
-Build:                fuego build [--output bin/app]
-Validate:             fuego validate (via MCP)
+```bash
+# Project
+fuego new <name>                              # Create new project
+fuego new <name> --api-only                   # API only (no templ)
+fuego new <name> --with-proxy                 # Include proxy.go example
+fuego dev [--port 3000]                       # Start dev server with hot reload
+fuego build [--output bin/app]                # Build for production
+fuego routes [--json]                         # List all routes
 
-## MCP Server
+# Generate
+fuego generate route <path> --methods GET,POST
+fuego generate middleware <name> --path <path> --template <template>
+fuego generate proxy --template <template>
+fuego generate page <path> [--with-layout]
 
-Start: fuego mcp serve --workdir /path/to/project
+# Tailwind CSS (standalone binary, no Node.js)
+fuego tailwind build                          # Build minified CSS
+fuego tailwind watch                          # Watch mode for dev
+fuego tailwind install                        # Install Tailwind binary
+fuego tailwind info                           # Show installation info
+```
 
-Tools:
-- fuego_new: Create new project
-- fuego_generate_route: Generate route file
-- fuego_generate_middleware: Generate middleware
-- fuego_generate_proxy: Generate proxy file
-- fuego_generate_page: Generate page template
-- fuego_list_routes: List all routes
-- fuego_info: Get project info
-- fuego_validate: Validate project
+## MCP Server (for AI Assistants)
+
+```bash
+fuego mcp serve --workdir /path/to/project
+```
+
+Configure in MCP client:
+```json
+{
+  "mcpServers": {
+    "fuego": {
+      "command": "fuego",
+      "args": ["mcp", "serve", "--workdir", "/path/to/project"]
+    }
+  }
+}
+```
+
+**Available tools:**
+- `fuego_new` - Create new project
+- `fuego_generate_route` - Generate route file
+- `fuego_generate_middleware` - Generate middleware
+- `fuego_generate_proxy` - Generate proxy file
+- `fuego_generate_page` - Generate page template
+- `fuego_list_routes` - List all routes
+- `fuego_info` - Get project info
+- `fuego_validate` - Validate project structure
 
 ## File Conventions
 
+```
 app/
 ├── api/
 │   ├── route.go              # Handlers for /api
@@ -45,28 +73,42 @@ app/
 │           └── route.go      # GET /api/posts/* (catch-all)
 ├── proxy.go                  # Request interceptor (runs before routing)
 ├── page.templ                # HTML page for /
-└── layout.templ              # Shared layout
+└── layout.templ              # Shared layout wrapper
+```
+
+| File | Purpose |
+|------|---------|
+| `route.go` | API endpoint (exports Get, Post, Put, Patch, Delete, etc.) |
+| `proxy.go` | Request interception before routing (app root only) |
+| `middleware.go` | Middleware for segment and children |
+| `page.templ` | UI for a route |
+| `layout.templ` | Shared UI wrapper (must include `{ children... }`) |
 
 ## Route Patterns
 
-[param]      -> Dynamic segment   -> /users/[id] -> /users/:id
-[...param]   -> Catch-all         -> /docs/[...slug] -> /docs/*
-[[...param]] -> Optional catch-all -> /shop/[[...cat]] -> /shop and /shop/*
-(group)      -> Route group       -> /(admin)/settings -> /settings (no /admin)
-_folder      -> Private           -> /_utils -> not routed
+| Pattern | Syntax | Example | Matches |
+|---------|--------|---------|---------|
+| Static | `folder/route.go` | `users/route.go` | `/api/users` |
+| Dynamic | `[param]` | `users/[id]/route.go` | `/api/users/123` |
+| Catch-all | `[...param]` | `docs/[...slug]/route.go` | `/api/docs/a/b/c` |
+| Optional | `[[...param]]` | `shop/[[...cat]]/route.go` | `/api/shop` and `/api/shop/*` |
+| Group | `(name)` | `(admin)/settings/route.go` | `/api/settings` (no /admin) |
+| Private | `_folder` | `_utils/` | Not routed |
 
 ## Handler Signature
 
+```go
+// HTTP Methods: Get, Post, Put, Patch, Delete, Head, Options
 func Get(c *fuego.Context) error {
     id := c.Param("id")           // URL parameter
     q := c.Query("filter")        // Query string
     return c.JSON(200, data)      // JSON response
 }
-
-HTTP Methods: Get, Post, Put, Patch, Delete, Head, Options
+```
 
 ## Middleware Signature
 
+```go
 func Middleware(next fuego.HandlerFunc) fuego.HandlerFunc {
     return func(c *fuego.Context) error {
         // before
@@ -75,47 +117,280 @@ func Middleware(next fuego.HandlerFunc) fuego.HandlerFunc {
         return err
     }
 }
+```
 
 ## Proxy Signature
 
+```go
 func Proxy(c *fuego.Context) (*fuego.ProxyResult, error) {
     return fuego.Continue(), nil          // proceed normally
     return fuego.Redirect(url, 301), nil  // redirect
-    return fuego.Rewrite("/new"), nil     // rewrite URL
-    return fuego.ResponseJSON(403, data), nil // return response
+    return fuego.Rewrite("/new"), nil     // rewrite URL internally
+    return fuego.ResponseJSON(403, data), nil // return response immediately
+    return fuego.ResponseHTML(503, html), nil // return HTML immediately
 }
+```
 
 ## Context API
 
-Request:
-- c.Param("id")          // URL parameter
-- c.Query("key")         // Query string
-- c.Header("X-Key")      // Request header
-- c.Bind(&body)          // Parse JSON body
-- c.Cookie("session")    // Get cookie
-- c.Method()             // HTTP method
-- c.Path()               // Request path
-- c.ClientIP()           // Client IP
+### Request Methods
 
-Response:
-- c.JSON(200, data)      // JSON response
-- c.String(200, "text")  // Plain text
-- c.HTML(200, html)      // HTML
-- c.Redirect(302, url)   // Redirect
-- c.NoContent()          // 204 No Content
-- c.SetHeader(k, v)      // Set response header
-- c.SetCookie(cookie)    // Set cookie
+```go
+// URL Parameters
+c.Param("id")                    // Get URL parameter as string
+c.ParamInt("id")                 // Get URL parameter as int
 
-Context:
-- c.Set("key", value)    // Store value
-- c.Get("key")           // Retrieve value
+// Query Strings
+c.Query("key")                   // Get query string value
+c.QueryDefault("key", "default") // Get with default value
+c.QueryInt("page", 1)            // Get as int with default
+c.QueryBool("active", false)     // Get as bool with default
+
+// Headers
+c.Header("Authorization")        // Get request header
+c.Headers()                      // Get all headers
+
+// Body
+c.Bind(&struct)                  // Parse JSON body into struct
+c.FormValue("key")               // Get form value (HTML forms, HTMX)
+
+// Cookies
+c.Cookie("session")              // Get cookie value
+
+// Request Info
+c.Method()                       // HTTP method (GET, POST, etc.)
+c.Path()                         // Request path
+c.ClientIP()                     // Client IP address
+c.Request()                      // Underlying *http.Request
+
+// Content Detection
+c.IsJSON()                       // Check if request is JSON
+c.IsHTMX()                       // Check if request is from HTMX
+```
+
+### Response Methods
+
+```go
+c.JSON(200, data)                // JSON response
+c.String(200, "text")            // Plain text response
+c.HTML(200, "<h1>Hi</h1>")       // HTML response
+c.Redirect(302, "/url")          // Redirect to URL
+c.NoContent()                    // 204 No Content
+c.Blob(200, "application/pdf", bytes) // Binary response
+
+// Headers & Cookies
+c.SetHeader("Key", "Value")      // Set response header
+c.SetCookie(cookie)              // Set cookie (*http.Cookie)
+```
+
+### Context Storage
+
+```go
+c.Set("key", value)              // Store value in context
+c.Get("key")                     // Retrieve value (interface{})
+c.GetString("key")               // Get as string
+c.GetInt("key")                  // Get as int
+```
+
+## Built-in Middleware
+
+All middleware available at `fuego.*`. See https://gofuego.dev/docs/api/middleware for config options.
+
+| Middleware | Usage | Description |
+|------------|-------|-------------|
+| `Logger()` | `app.Use(fuego.Logger())` | Request/response logging (enabled by default) |
+| `Recover()` | `app.Use(fuego.Recover())` | Panic recovery, returns 500 |
+| `RequestID()` | `app.Use(fuego.RequestID())` | Add unique X-Request-ID header |
+| `CORS()` | `app.Use(fuego.CORS())` | Cross-origin resource sharing |
+| `CORSWithConfig(cfg)` | `app.Use(fuego.CORSWithConfig(...))` | CORS with custom origins/methods |
+| `Timeout(d)` | `app.Use(fuego.Timeout(30*time.Second))` | Request timeout |
+| `BasicAuth(fn)` | `app.Use(fuego.BasicAuth(validator))` | HTTP Basic authentication |
+| `Compress()` | `app.Use(fuego.Compress())` | Gzip response compression |
+| `RateLimiter(n, d)` | `app.Use(fuego.RateLimiter(100, time.Minute))` | Rate limiting per IP |
+| `SecureHeaders()` | `app.Use(fuego.SecureHeaders())` | Security headers (CSP, X-Frame-Options, etc.) |
+
+**Recommended middleware order:**
+```go
+app.Use(fuego.Logger())       // 1. Log all requests
+app.Use(fuego.Recover())      // 2. Catch panics
+app.Use(fuego.RequestID())    // 3. Request correlation
+app.Use(fuego.Timeout(30*time.Second)) // 4. Timeouts
+app.Use(fuego.CORS())         // 5. CORS
+app.Use(fuego.SecureHeaders()) // 6. Security
+app.Use(fuego.Compress())     // 7. Compression
+// 8. Business middleware (auth, rate limiting)
+```
+
+## Error Helpers
+
+Return semantic HTTP errors. See https://gofuego.dev/docs/api/errors for details.
+
+```go
+return fuego.BadRequest("invalid input")         // 400
+return fuego.Unauthorized("invalid token")       // 401
+return fuego.Forbidden("access denied")          // 403
+return fuego.NotFound("user not found")          // 404
+return fuego.Conflict("email already exists")    // 409
+return fuego.InternalServerError("server error") // 500
+
+// Custom status codes
+return fuego.NewHTTPError(429, "rate limit exceeded")
+return fuego.NewHTTPErrorWithCause(500, "message", err) // with underlying error
+```
+
+**Response format:**
+```json
+{"error": "bad_request", "message": "invalid input"}
+```
+
+## Tailwind CSS Integration
+
+Fuego uses standalone Tailwind CSS v4 binary - no Node.js required.
+
+**File structure:**
+```
+myproject/
+├── styles/
+│   └── input.css        # Source: @import "tailwindcss";
+└── static/
+    └── css/
+        └── output.css   # Generated (auto-built)
+```
+
+**Commands:**
+```bash
+fuego tailwind build     # Production build (minified)
+fuego tailwind watch     # Development watch mode
+fuego tailwind install   # Download Tailwind binary
+fuego tailwind info      # Show installation info
+```
+
+In `fuego dev`, Tailwind watcher starts automatically if `styles/input.css` exists.
+
+## HTMX Integration
+
+HTMX is included by default for interactive UIs without JavaScript frameworks.
+
+**In layout.templ:**
+```html
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+```
+
+**Common patterns:**
+```html
+<!-- Load on page load -->
+<div hx-get="/api/users" hx-trigger="load" hx-swap="innerHTML">Loading...</div>
+
+<!-- Form submission -->
+<form hx-post="/api/tasks" hx-target="#list" hx-swap="innerHTML">
+  <input name="title" />
+  <button type="submit">Add</button>
+</form>
+
+<!-- Button action -->
+<button hx-delete="/api/tasks/123" hx-target="#list" hx-confirm="Sure?">Delete</button>
+```
+
+**In handlers:**
+```go
+if c.IsHTMX() {
+    return c.HTML(200, "<li>New Item</li>")  // Return partial HTML
+}
+return c.JSON(200, item)  // Return JSON for API clients
+```
 
 ## Generate Templates
 
-Middleware templates: blank, auth, logging, timing, cors
-Proxy templates: blank, auth-check, rate-limit, maintenance, redirect-www
+**Middleware templates:** `blank`, `auth`, `logging`, `timing`, `cors`
+```bash
+fuego generate middleware auth --path api/protected --template auth
+```
+
+**Proxy templates:** `blank`, `auth-check`, `rate-limit`, `maintenance`, `redirect-www`
+```bash
+fuego generate proxy --template auth-check
+```
+
+## Request Logging
+
+App-level logger is **enabled by default** and captures ALL requests including proxy.
+
+```
+[12:34:56] GET /api/users 200 in 45ms (1.2KB)
+[12:34:57] POST /api/tasks 201 in 123ms (256B)
+[12:34:58] GET /v1/users → /api/users 200 in 52ms [rewrite]
+```
+
+**Configuration:**
+```go
+app.SetLogger(fuego.RequestLoggerConfig{
+    ShowIP:        true,
+    ShowUserAgent: true,
+    SkipStatic:    true,
+    SkipPaths:     []string{"/health"},
+    Level:         fuego.LogLevelInfo,
+})
+
+app.DisableLogger()  // Turn off logging
+```
+
+**Environment variables:**
+- `FUEGO_LOG_LEVEL` - debug, info, warn, error, off
+- `FUEGO_DEV=true` - Auto debug level
+- `GO_ENV=production` - Auto warn level
+
+## Configuration (fuego.yaml)
+
+```yaml
+port: 3000
+host: "0.0.0.0"
+app_dir: "app"
+static_dir: "static"
+static_path: "/static"
+
+dev:
+  hot_reload: true
+  watch_extensions: [".go", ".templ"]
+  exclude_dirs: ["node_modules", ".git"]
+
+middleware:
+  logger: true
+  recover: true
+```
+
+See https://gofuego.dev/docs/api/config for all options.
+
+## Documentation
+
+**Guides:**
+- Quick Start: https://gofuego.dev/docs/getting-started/quickstart
+- File-based Routing: https://gofuego.dev/docs/routing/file-based
+- Middleware: https://gofuego.dev/docs/middleware/overview
+- Proxy: https://gofuego.dev/docs/middleware/proxy
+- Templates: https://gofuego.dev/docs/core-concepts/templates
+- HTMX: https://gofuego.dev/docs/frontend/htmx
+- Tailwind: https://gofuego.dev/docs/frontend/tailwind
+- Examples: https://gofuego.dev/docs/guides/examples
+
+**API Reference:**
+- Overview: https://gofuego.dev/docs/api/overview
+- App: https://gofuego.dev/docs/api/app
+- Context: https://gofuego.dev/docs/api/context
+- Config: https://gofuego.dev/docs/api/config
+- Middleware: https://gofuego.dev/docs/api/middleware
+- Proxy: https://gofuego.dev/docs/api/proxy
+- Errors: https://gofuego.dev/docs/api/errors
+- CLI: https://gofuego.dev/docs/api/cli
 
 ## JSON Output
 
-All commands support --json flag for machine-readable output.
-Example: fuego routes --json
+All CLI commands support `--json` flag for machine-readable output:
+```bash
+fuego routes --json
+```
+
+## Import
+
+```go
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+```

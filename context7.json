@@ -44,9 +44,16 @@
     "For authentication, store user info in context with c.Set() and retrieve with c.Get()",
     "Use fuego.BadRequest(), fuego.NotFound(), fuego.Unauthorized() for semantic error responses",
     "Static files are served from static/ directory at /static path by default",
-    "Configure static file serving in fuego.yaml with static_dir and static_path options"
+    "Configure static file serving in fuego.yaml with static_dir and static_path options",
+    "Reference docs/api/middleware.mdx for built-in middleware configuration options",
+    "Reference docs/api/errors.mdx for error handling patterns and HTTPError struct",
+    "Reference docs/api/app.mdx for App struct methods and server lifecycle",
+    "Reference docs/api/proxy.mdx for ProxyResult actions (Continue, Redirect, Rewrite, ResponseJSON)"
   ],
   "previousVersions": [
+    {
+      "tag": "v0.7.4"
+    },
     {
       "tag": "v0.6.0"
     },
@@ -55,9 +62,6 @@
     },
     {
       "tag": "v0.4.3"
-    },
-    {
-      "tag": "v0.4.0"
     }
   ]
 }

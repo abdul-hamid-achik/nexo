@@ -358,31 +358,36 @@ middleware:
 Full documentation is available at [gofuego.dev](https://gofuego.dev).
 
 **Getting Started:**
-- [Quick Start](https://gofuego.dev/getting-started/quickstart)
-- [Familiar Patterns](https://gofuego.dev/getting-started/familiar-patterns)
+- [Quick Start](https://gofuego.dev/docs/getting-started/quickstart)
+- [Familiar Patterns](https://gofuego.dev/docs/getting-started/familiar-patterns)
 
 **Core Concepts:**
-- [File-based Routing](https://gofuego.dev/routing/file-based)
-- [Middleware](https://gofuego.dev/middleware/overview)
-- [Proxy](https://gofuego.dev/middleware/proxy)
-- [Templates](https://gofuego.dev/core-concepts/templates)
-- [Static Files](https://gofuego.dev/core-concepts/static-files)
+- [File-based Routing](https://gofuego.dev/docs/routing/file-based)
+- [Middleware](https://gofuego.dev/docs/middleware/overview)
+- [Proxy](https://gofuego.dev/docs/middleware/proxy)
+- [Templates](https://gofuego.dev/docs/core-concepts/templates)
+- [Static Files](https://gofuego.dev/docs/core-concepts/static-files)
 
 **Frontend:**
-- [HTMX Integration](https://gofuego.dev/frontend/htmx)
-- [Tailwind CSS](https://gofuego.dev/frontend/tailwind)
-- [Forms](https://gofuego.dev/frontend/forms)
+- [HTMX Integration](https://gofuego.dev/docs/frontend/htmx)
+- [Tailwind CSS](https://gofuego.dev/docs/frontend/tailwind)
+- [Forms](https://gofuego.dev/docs/frontend/forms)
 
 **Guides:**
-- [Examples](https://gofuego.dev/guides/examples) - Working code examples for common patterns
-- [Authentication](https://gofuego.dev/guides/authentication)
-- [Database](https://gofuego.dev/guides/database)
-- [Deployment](https://gofuego.dev/guides/deployment)
+- [Examples](https://gofuego.dev/docs/guides/examples) - Working code examples for common patterns
+- [Authentication](https://gofuego.dev/docs/guides/authentication)
+- [Database](https://gofuego.dev/docs/guides/database)
+- [Deployment](https://gofuego.dev/docs/guides/deployment)
 
-**Reference:**
-- [API Reference](https://gofuego.dev/api/overview)
-- [Context API](https://gofuego.dev/api/context)
-- [CLI Reference](https://gofuego.dev/api/cli)
+**API Reference:**
+- [Overview](https://gofuego.dev/docs/api/overview) - Quick reference tables for all types
+- [App](https://gofuego.dev/docs/api/app) - Application lifecycle and routing
+- [Context](https://gofuego.dev/docs/api/context) - Request/response methods
+- [Config](https://gofuego.dev/docs/api/config) - Configuration options
+- [Middleware](https://gofuego.dev/docs/api/middleware) - Built-in middleware reference
+- [Proxy](https://gofuego.dev/docs/api/proxy) - Request interception
+- [Errors](https://gofuego.dev/docs/api/errors) - Error handling helpers
+- [CLI](https://gofuego.dev/docs/api/cli) - Command-line interface
 
 ## Development
 

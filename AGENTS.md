@@ -8,6 +8,27 @@ This document provides detailed guidance for LLM agents working with Fuego proje
 
 Fuego is a file-system based Go framework inspired by Next.js App Router. Routes are defined by the file structure under the `app/` directory.
 
+## Documentation Structure
+
+The documentation at https://gofuego.dev is organized into two main tabs:
+
+### Guides Tab (`/docs`)
+- **Getting Started** - Introduction, Quickstart, Familiar Patterns
+- **Core Concepts** - File-based Routing, Middleware, Proxy, Templates, Static Files
+- **Frontend** - HTMX Integration, Tailwind CSS, Forms
+- **Advanced** - Error Handling, Testing, Configuration, Performance
+- **Guides** - Examples, Authentication, Database, Deployment
+
+### API Reference Tab (`/docs/api`)
+- **Overview** (`/docs/api/overview`) - Quick reference tables for all types and functions
+- **App** (`/docs/api/app`) - Application struct, routing methods, server lifecycle
+- **Context** (`/docs/api/context`) - Request/response methods, context storage
+- **Config** (`/docs/api/config`) - Configuration options, environment variables, fuego.yaml
+- **Middleware** (`/docs/api/middleware`) - All 9 built-in middleware with configuration options
+- **Proxy** (`/docs/api/proxy`) - ProxyResult actions and common patterns
+- **Errors** (`/docs/api/errors`) - HTTPError struct and error helper functions
+- **CLI** (`/docs/api/cli`) - Command-line interface and code generation
+
 ## Project Structure
 
 ```
@@ -250,15 +271,23 @@ func Proxy(c *fuego.Context) (*fuego.ProxyResult, error) {
 
 ## Error Handling
 
+Use the built-in error helpers for semantic HTTP errors. See https://gofuego.dev/docs/api/errors for details.
+
 ```go
 func Get(c *fuego.Context) error {
     // Client errors (4xx)
-    return c.JSON(400, map[string]string{"error": "bad request"})
-    return c.JSON(401, map[string]string{"error": "unauthorized"})
-    return c.JSON(404, map[string]string{"error": "not found"})
+    return fuego.BadRequest("invalid input")           // 400
+    return fuego.Unauthorized("invalid token")         // 401
+    return fuego.Forbidden("access denied")            // 403
+    return fuego.NotFound("user not found")            // 404
+    return fuego.Conflict("email already exists")      // 409
     
     // Server errors (5xx)
-    return c.JSON(500, map[string]string{"error": "internal error"})
+    return fuego.InternalServerError("server error")   // 500
+    
+    // Custom status codes
+    return fuego.NewHTTPError(429, "rate limit exceeded")
+    return fuego.NewHTTPErrorWithCause(500, "message", err) // with cause
 }
 ```
 
@@ -291,6 +320,41 @@ func Get(c *fuego.Context) error {
 | `rate-limit` | IP-based rate limiting |
 | `maintenance` | Maintenance mode |
 | `redirect-www` | WWW redirect |
+
+## Built-in Middleware
+
+Fuego provides 9 built-in middleware functions. See https://gofuego.dev/docs/api/middleware for full configuration options.
+
+| Middleware | Usage | Description |
+|------------|-------|-------------|
+| `Logger()` | `app.Use(fuego.Logger())` | Request/response logging |
+| `Recover()` | `app.Use(fuego.Recover())` | Panic recovery, returns 500 |
+| `RequestID()` | `app.Use(fuego.RequestID())` | Add unique X-Request-ID header |
+| `CORS()` | `app.Use(fuego.CORS())` | Cross-origin resource sharing |
+| `Timeout(d)` | `app.Use(fuego.Timeout(30*time.Second))` | Request timeout |
+| `BasicAuth(fn)` | `app.Use(fuego.BasicAuth(validator))` | HTTP Basic authentication |
+| `Compress()` | `app.Use(fuego.Compress())` | Gzip response compression |
+| `RateLimiter(n, d)` | `app.Use(fuego.RateLimiter(100, time.Minute))` | Rate limiting per IP |
+| `SecureHeaders()` | `app.Use(fuego.SecureHeaders())` | Security headers (CSP, X-Frame-Options) |
+
+**Configurable variants:**
+- `LoggerWithConfig(config)` - Custom format, output, skip function
+- `RecoverWithConfig(config)` - Stack trace, custom panic handler
+- `RequestIDWithConfig(config)` - Custom header name, ID generator
+- `CORSWithConfig(config)` - Custom origins, methods, headers, credentials
+- `BasicAuthWithConfig(config)` - Custom realm
+
+**Recommended middleware order:**
+```go
+app.Use(fuego.Logger())       // 1. Log all requests
+app.Use(fuego.Recover())      // 2. Catch panics
+app.Use(fuego.RequestID())    // 3. Request correlation
+app.Use(fuego.Timeout(30*time.Second)) // 4. Timeouts
+app.Use(fuego.CORS())         // 5. CORS
+app.Use(fuego.SecureHeaders()) // 6. Security
+app.Use(fuego.Compress())     // 7. Compression
+// 8. Business middleware (auth, rate limiting)
+```
 
 ## Request Logging
 
