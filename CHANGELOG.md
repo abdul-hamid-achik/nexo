@@ -7,6 +7,121 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2024-12-29
+
+### Added
+
+- **App-level request logger with full request visibility**
+  - Captures **ALL** requests including those handled by proxy
+  - Next.js-inspired compact format: `[12:34:56] GET /api/users 200 in 45ms (1.2KB)`
+  - Color-coded HTTP methods and status codes
+  - Shows proxy actions: `[rewrite]`, `[redirect → URL]`, `[proxy]`
+  - Smart time formatting (ms default, auto-scale to µs or seconds)
+  - Response size display
+  - Log levels: `debug`, `info`, `warn`, `error`, `off`
+  - TTY auto-detection (disables colors when piping to file)
+  - Optional client IP and user agent display
+  - Static file filtering option
+
+- **Log level support with environment detection**
+  - `FUEGO_LOG_LEVEL` environment variable
+  - `FUEGO_DEV=true` auto-sets debug level
+  - `GO_ENV=production` auto-sets warn level
+
+- **Response writer wrapper** for accurate status code and size capture
+
+- **Error helper functions**
+  - `fuego.BadRequest(message)` - 400 Bad Request
+  - `fuego.Unauthorized(message)` - 401 Unauthorized
+  - `fuego.Forbidden(message)` - 403 Forbidden
+  - `fuego.NotFound(message)` - 404 Not Found
+  - `fuego.Conflict(message)` - 409 Conflict
+  - `fuego.InternalServerError(message)` - 500 Internal Server Error
+
+### Changed
+
+- **Logger is now enabled by default at the app level**
+  - No need to call `app.Use(fuego.Logger())`
+  - Use `app.SetLogger(config)` to customize
+  - Use `app.DisableLogger()` to disable
+
+- Default time unit changed from microseconds to milliseconds for readability
+- Errors no longer show `<nil>` when there's no error
+- Timestamp format changed to compact `[HH:MM:SS]`
+
+### Deprecated
+
+- `app.Use(fuego.Logger())` middleware is still supported but app-level logging is recommended for complete visibility
+
+### Migration Guide
+
+**Before (v0.5.0):**
+```go
+app := fuego.New()
+app.Use(fuego.Logger()) // Only captures router requests
+```
+
+**After (v0.6.0):**
+```go
+app := fuego.New()
+// Logger is enabled by default and captures ALL requests!
+
+// Customize if needed:
+app.SetLogger(fuego.RequestLoggerConfig{
+    ShowIP:     true,
+    SkipStatic: true,
+    Level:      fuego.LogLevelInfo,
+})
+
+// Or disable:
+app.DisableLogger()
+```
+
+## [0.5.0] - 2024-12-29
+
+### Added
+
+- **New documentation pages**
+  - `docs/getting-started/familiar-patterns.md` - Guide for developers coming from Next.js, Nuxt, SvelteKit
+  - `docs/guides/deployment.md` - Comprehensive deployment guide (Docker, AWS, GCP, Fly.io, Railway, Render, Heroku)
+  - `docs/api/context.md` - Complete Context API reference
+
+- **Fullstack example improvements**
+  - Added `examples/fullstack/README.md` with setup instructions
+  - Added `examples/fullstack/internal/tasks/store.go` - Shared task store
+  - Added `examples/fullstack/app/api/tasks/toggle/route.go` - Toggle task completion endpoint
+  - Task manager now fully functional with HTMX
+
+### Changed
+
+- **README completely rewritten**
+  - New tagline: "File-based routing for Go. Fast to write. Faster to run."
+  - Added "Why Fuego?" section showing traditional vs file-based routing
+  - Added "Familiar Conventions" section with routing patterns table
+  - Improved features list with clearer value propositions
+  - Complete examples table with descriptions
+  - Reduced framework comparison mentions for cleaner branding
+
+- **All examples standardized**
+  - All `go.mod` files now use Go 1.25.5
+  - All examples use `replace` directive for local development
+  - Middleware signature fixed to use factory pattern: `func Middleware() fuego.MiddlewareFunc`
+
+- **Proxy example fixed**
+  - `app/proxy.go` now correctly checks `/api/admin` instead of `/admin`
+  - `README.md` updated with correct path references
+
+- **context7.json updated**
+  - Improved project description
+  - Added new rules for AI assistants
+  - Added v0.5.0 to previousVersions
+
+### Fixed
+
+- Middleware signature in `examples/middleware/` now uses correct factory pattern
+- Middleware signature examples in `docs/middleware/overview.md` corrected
+- Fullstack example `go.mod` module name fixed to full path
+
 ## [0.4.0] - 2024-12-29
 
 ### Added
@@ -194,7 +309,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Built on chi router
 - 137+ test cases
 
-[Unreleased]: https://github.com/abdul-hamid-achik/fuego/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/abdul-hamid-achik/fuego/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/abdul-hamid-achik/fuego/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/abdul-hamid-achik/fuego/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/abdul-hamid-achik/fuego/compare/v0.3.6...v0.4.0
 [0.3.6]: https://github.com/abdul-hamid-achik/fuego/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/abdul-hamid-achik/fuego/compare/v0.3.0...v0.3.5
