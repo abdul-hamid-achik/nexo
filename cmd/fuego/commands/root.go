@@ -16,10 +16,11 @@ var rootCmd = &cobra.Command{
 Inspired by Next.js App Router, it brings convention over configuration to Go.
 
 Quick Start:
-  fuego new myapp    Create a new Fuego project
-  fuego dev          Start development server with hot reload
-  fuego build        Build for production
-  fuego routes       List all registered routes
+  fuego new myapp      Create a new Fuego project
+  fuego dev            Start development server with hot reload
+  fuego build          Build for production
+  fuego routes         List all registered routes
+  fuego openapi        Generate OpenAPI specifications
 
 Documentation: https://github.com/abdul-hamid-achik/fuego`,
 	Version: version.GetVersion(),

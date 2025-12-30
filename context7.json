@@ -48,7 +48,15 @@
     "Reference docs/api/middleware.mdx for built-in middleware configuration options",
     "Reference docs/api/errors.mdx for error handling patterns and HTTPError struct",
     "Reference docs/api/app.mdx for App struct methods and server lifecycle",
-    "Reference docs/api/proxy.mdx for ProxyResult actions (Continue, Redirect, Rewrite, ResponseJSON)"
+    "Reference docs/api/proxy.mdx for ProxyResult actions (Continue, Redirect, Rewrite, ResponseJSON)",
+    "Use app.ServeOpenAPI() to enable automatic OpenAPI 3.1 specification generation",
+    "OpenAPI spec is served at /openapi.json, Swagger UI at /docs by default",
+    "Run 'fuego openapi generate' to create openapi.json file",
+    "Add comments above handler functions for automatic API documentation",
+    "Comments are extracted for OpenAPI: first line = summary, rest = description",
+    "Tags are automatically derived from directory structure (e.g., app/api/users -> 'users' tag)",
+    "Path parameters are automatically detected from [param] segments",
+    "Reference docs/api/openapi.mdx for OpenAPI configuration and best practices"
   ],
   "previousVersions": [
     {

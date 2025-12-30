@@ -102,6 +102,7 @@
         "docs/api/middleware",
         "docs/api/proxy",
         "docs/api/errors",
+        "docs/api/openapi",
         "docs/api/cli"
       ]
     }

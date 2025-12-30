@@ -1,0 +1,610 @@
+---
+title: OpenAPI
+description: 'Automatic OpenAPI specification generation for your Fuego APIs'
+---
+
+Fuego automatically generates OpenAPI 3.1 specifications from your file-based routes, enabling interactive API documentation with Swagger UI.
+
+## Quick Start
+
+### Generate Spec File
+
+```bash
+fuego openapi generate
+```
+
+This scans your `app/` directory and generates `openapi.json`.
+
+### Serve Swagger UI
+
+```bash
+fuego openapi serve
+```
+
+Opens interactive API documentation at `http://localhost:8080/docs`.
+
+### Runtime Integration
+
+```go
+app := fuego.New()
+
+// Enable OpenAPI endpoints
+app.ServeOpenAPI(fuego.OpenAPIOptions{
+    Title:       "My API",
+    Version:     "1.0.0",
+    Description: "My awesome API",
+})
+
+// Now available:
+// GET /openapi.json - OpenAPI specification
+// GET /docs - Swagger UI
+
+app.Listen(":3000")
+```
+
+---
+
+## CLI Commands
+
+### fuego openapi generate
+
+Generate an OpenAPI specification file from your routes.
+
+**Usage:**
+```bash
+fuego openapi generate [flags]
+```
+
+**Flags:**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--output` | `-o` | `openapi.json` | Output file path |
+| `--format` | `-f` | `json` | Output format (json or yaml) |
+| `--title` | | Project name | API title |
+| `--version` | | `1.0.0` | API version |
+| `--description` | | | API description |
+| `--server` | | | Server URL (e.g., http://localhost:3000) |
+| `--app-dir` | `-d` | `app` | App directory to scan |
+| `--openapi30` | | `false` | Use OpenAPI 3.0.3 instead of 3.1.0 |
+| `--json` | | `false` | JSON output for tooling |
+
+**Examples:**
+
+```bash
+# Default (outputs openapi.json)
+fuego openapi generate
+
+# YAML format
+fuego openapi generate --format yaml --output api.yaml
+
+# Custom title and version
+fuego openapi generate --title "User Service" --version "2.0.0"
+
+# With server URL
+fuego openapi generate --server "https://api.example.com"
+
+# OpenAPI 3.0 compatibility
+fuego openapi generate --openapi30
+```
+
+**Output:**
+
+```
+  Fuego OpenAPI Generator
+
+  → Scanning routes...
+  ✓ Found 12 routes
+  → Generating OpenAPI spec...
+  ✓ Spec generated
+
+  Output:  openapi.json
+  Format:  OpenAPI 3.1.0 (json)
+  Routes:  12
+  Size:    4.52 KB
+```
+
+---
+
+### fuego openapi serve
+
+Start a local server with Swagger UI for interactive API exploration.
+
+**Usage:**
+```bash
+fuego openapi serve [flags]
+```
+
+**Flags:**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--port` | `-p` | `8080` | Port to serve on |
+| `--spec` | | | Use existing spec file |
+| `--app-dir` | `-d` | `app` | App directory to scan |
+| `--title` | | Project name | API title |
+| `--version` | | `1.0.0` | API version |
+
+**Examples:**
+
+```bash
+# Generate and serve
+fuego openapi serve
+
+# Serve existing spec file
+fuego openapi serve --spec openapi.json
+
+# Custom port
+fuego openapi serve --port 9000
+```
+
+**Output:**
+
+```
+  Fuego OpenAPI Server
+
+  → Generating spec from routes...
+  ✓ Spec generated
+
+  ➜ Swagger UI:    http://localhost:8080/docs
+  ➜ OpenAPI JSON:  http://localhost:8080/openapi.json
+
+  Press Ctrl+C to stop
+```
+
+---
+
+## Runtime API
+
+### ServeOpenAPI
+
+Add OpenAPI endpoints to your running application.
+
+```go
+type OpenAPIOptions struct {
+    // Spec configuration
+    Title       string   // API title (required)
+    Version     string   // API version (default: "1.0.0")
+    Description string   // API description
+    
+    // Endpoints
+    SpecPath    string   // Path for spec (default: "/openapi.json")
+    DocsPath    string   // Path for Swagger UI (default: "/docs")
+    
+    // Features
+    Enabled     bool     // Enable/disable (default: true)
+}
+
+func (a *App) ServeOpenAPI(opts OpenAPIOptions)
+```
+
+**Example:**
+
+```go
+app := fuego.New()
+
+app.ServeOpenAPI(fuego.OpenAPIOptions{
+    Title:       "E-Commerce API",
+    Version:     "1.0.0",
+    Description: "API for managing products and orders",
+})
+
+// Access at:
+// http://localhost:3000/openapi.json - OpenAPI spec
+// http://localhost:3000/docs - Swagger UI
+
+app.Listen(":3000")
+```
+
+**Custom Paths:**
+
+```go
+app.ServeOpenAPI(fuego.OpenAPIOptions{
+    Title:    "My API",
+    Version:  "2.0.0",
+    SpecPath: "/api/openapi.json",  // Custom spec path
+    DocsPath: "/api/docs",           // Custom docs path
+})
+```
+
+---
+
+## Automatic Documentation
+
+Fuego extracts documentation from your code automatically:
+
+### From Comments
+
+Add comments above handler functions for operation summaries and descriptions:
+
+```go
+// Get returns a user by ID
+//
+// Retrieves a single user from the database by their unique identifier.
+// Returns 404 if the user is not found.
+func Get(c *fuego.Context) error {
+    id := c.Param("id")
+    // ...
+}
+```
+
+**Generated OpenAPI:**
+- **Summary**: `"Get returns a user by ID"`
+- **Description**: `"Retrieves a single user from the database..."`
+
+**Comment Format:**
+- **First line** → Summary (short description)
+- **Remaining lines** → Description (detailed explanation)
+- Blank lines separate summary from description
+
+### From File Structure
+
+Tags are automatically derived from your directory structure:
+
+| File Path | Generated Tags |
+|-----------|----------------|
+| `app/api/users/route.go` | `["users"]` |
+| `app/api/admin/settings/route.go` | `["admin"]` |
+| `app/api/v2/products/route.go` | `["products"]` |
+| `app/api/posts/[id]/route.go` | `["posts"]` |
+
+Dynamic segments like `[id]` and route groups like `(admin)` are ignored when deriving tags.
+
+### From URL Parameters
+
+Path parameters are automatically detected from dynamic segments:
+
+```go
+// File: app/api/users/[id]/route.go
+
+// Get retrieves a user by ID
+func Get(c *fuego.Context) error {
+    id := c.Param("id")
+    // ...
+}
+```
+
+**Generated OpenAPI:**
+```json
+{
+  "parameters": [
+    {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": { "type": "string" }
+    }
+  ]
+}
+```
+
+### Request Bodies
+
+For POST, PUT, and PATCH methods, Fuego automatically adds request body schemas:
+
+```go
+// Post creates a new user
+func Post(c *fuego.Context) error {
+    var req CreateUserRequest
+    if err := c.Bind(&req); err != nil {
+        return fuego.BadRequest("invalid request body")
+    }
+    // ...
+}
+```
+
+**Generated OpenAPI:**
+```json
+{
+  "requestBody": {
+    "required": true,
+    "content": {
+      "application/json": {
+        "schema": { "type": "object" }
+      }
+    }
+  }
+}
+```
+
+### Response Status Codes
+
+Default responses are added based on the HTTP method:
+
+| Method | Status Codes |
+|--------|--------------|
+| `GET` | 200 (Success), 404 (Not Found for paths with params) |
+| `POST` | 200 (Success), 400 (Bad Request) |
+| `PUT` | 200 (Success), 400 (Bad Request), 404 (Not Found) |
+| `PATCH` | 200 (Success), 400 (Bad Request), 404 (Not Found) |
+| `DELETE` | 200 (Success), 404 (Not Found) |
+
+---
+
+## Generated Spec Example
+
+Given this route structure:
+
+```
+app/
+├── api/
+│   ├── users/
+│   │   ├── route.go          # GET, POST /api/users
+│   │   └── [id]/
+│   │       └── route.go      # GET, PUT, DELETE /api/users/{id}
+│   └── health/
+│       └── route.go          # GET /api/health
+```
+
+With this code:
+
+```go
+// app/api/users/route.go
+package users
+
+// Get lists all users
+func Get(c *fuego.Context) error { ... }
+
+// Post creates a new user
+func Post(c *fuego.Context) error { ... }
+```
+
+```go
+// app/api/users/[id]/route.go
+package users
+
+// Get retrieves a user by ID
+//
+// Returns detailed information about a specific user.
+func Get(c *fuego.Context) error { ... }
+```
+
+**Generated `openapi.json`:**
+
+```json
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "My API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/users": {
+      "get": {
+        "summary": "Get lists all users",
+        "tags": ["users"],
+        "responses": {
+          "200": { "description": "Success" }
+        }
+      },
+      "post": {
+        "summary": "Post creates a new user",
+        "tags": ["users"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Success" },
+          "400": { "description": "Bad Request" }
+        }
+      }
+    },
+    "/api/users/{id}": {
+      "get": {
+        "summary": "Get retrieves a user by ID",
+        "description": "Returns detailed information about a specific user.",
+        "tags": ["users"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Success" },
+          "404": { "description": "Not Found" }
+        }
+      }
+    }
+  }
+}
+```
+
+---
+
+## Integration with Tools
+
+### Postman
+
+Import the generated `openapi.json` directly into Postman:
+
+1. Open Postman
+2. Click **Import**
+3. Select your `openapi.json` file
+4. Postman creates a collection with all routes
+
+### Code Generation
+
+Generate client SDKs using `oapi-codegen`:
+
+```bash
+# Install oapi-codegen
+go install github.com/deepmap/oapi-codegen/v2/cmd/oapi-codegen@latest
+
+# Generate Go client
+oapi-codegen --package client openapi.json > client/api.go
+```
+
+### API Gateways
+
+Many API gateways support OpenAPI import:
+
+- **AWS API Gateway** - Import spec to create routes
+- **Kong** - Use OpenAPI plugin for automatic configuration
+- **Azure API Management** - Import spec directly
+
+### Documentation Sites
+
+Host documentation with tools like:
+
+- **Swagger UI** - Interactive API explorer (built-in with `fuego openapi serve`)
+- **Redoc** - Clean, responsive documentation
+- **Stoplight** - API design and documentation platform
+
+---
+
+## Configuration File
+
+You can also configure OpenAPI generation in `fuego.yaml`:
+
+```yaml
+openapi:
+  title: "My API"
+  version: "1.0.0"
+  description: "Comprehensive API for my application"
+  contact:
+    name: "API Support"
+    email: "support@example.com"
+    url: "https://example.com/support"
+  license:
+    name: "MIT"
+    url: "https://opensource.org/licenses/MIT"
+  servers:
+    - url: "https://api.example.com"
+      description: "Production"
+    - url: "https://staging-api.example.com"
+      description: "Staging"
+```
+
+Then generate with:
+
+```bash
+fuego openapi generate  # Reads from fuego.yaml
+```
+
+---
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="1. Add meaningful comments">
+    Write clear, concise comments above your handlers. The first line becomes the operation summary in Swagger UI.
+    
+    ```go
+    // ❌ Bad
+    // Get user
+    func Get(c *fuego.Context) error { ... }
+    
+    // ✅ Good
+    // Get retrieves a user by ID
+    //
+    // This endpoint returns detailed user information including
+    // profile data, preferences, and account status.
+    func Get(c *fuego.Context) error { ... }
+    ```
+  </Accordion>
+
+  <Accordion title="2. Use descriptive function names">
+    Handler function names (Get, Post, etc.) map directly to HTTP methods, but your comments should describe what the operation does.
+  </Accordion>
+
+  <Accordion title="3. Regenerate on changes">
+    Always regenerate your spec before deployment:
+    
+    ```bash
+    # In CI/CD pipeline
+    fuego openapi generate
+    git diff openapi.json  # Review changes
+    ```
+  </Accordion>
+
+  <Accordion title="4. Version your API">
+    Use semantic versioning and update the version in your spec:
+    
+    ```bash
+    fuego openapi generate --version 2.0.0
+    ```
+  </Accordion>
+
+  <Accordion title="5. Serve docs in development">
+    Enable OpenAPI in development for easier testing:
+    
+    ```go
+    if os.Getenv("GO_ENV") != "production" {
+        app.ServeOpenAPI(fuego.OpenAPIOptions{
+            Title:   "My API (Dev)",
+            Version: "1.0.0",
+        })
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="OpenAPI spec is empty">
+    **Problem:** Generated spec has no paths.
+    
+    **Solution:** 
+    - Ensure `app/` directory exists
+    - Check that route files are named `route.go`
+    - Verify handler functions match HTTP method names (Get, Post, etc.)
+    - Run `fuego routes` to see if routes are detected
+  </Accordion>
+
+  <Accordion title="Comments not appearing">
+    **Problem:** Handler comments don't show in the spec.
+    
+    **Solution:**
+    - Comments must be directly above the function (no blank lines)
+    - Use `//` style comments (not `/* */`)
+    - First line becomes summary, rest becomes description
+  </Accordion>
+
+  <Accordion title="Wrong tags generated">
+    **Problem:** Routes have unexpected tags.
+    
+    **Solution:**
+    - Tags are derived from the first directory after `/api/`
+    - Use meaningful directory names
+    - Dynamic segments `[id]` and groups `(name)` are ignored
+  </Accordion>
+
+  <Accordion title="Swagger UI not loading">
+    **Problem:** `/docs` endpoint returns blank page.
+    
+    **Solution:**
+    - Check browser console for errors
+    - Ensure `/openapi.json` endpoint returns valid JSON
+    - Check CORS headers if accessing from different origin
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="CLI Reference" icon="terminal" href="/docs/api/cli">
+    Complete CLI command documentation
+  </Card>
+  <Card title="Error Handling" icon="circle-exclamation" href="/docs/api/errors">
+    Document error responses
+  </Card>
+  <Card title="Middleware" icon="layer-group" href="/docs/api/middleware">
+    Add request validation
+  </Card>
+  <Card title="Examples" icon="code" href="/docs/guides/examples">
+    See full API examples
+  </Card>
+</CardGroup>

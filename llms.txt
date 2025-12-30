@@ -27,6 +27,10 @@ fuego tailwind build                          # Build minified CSS
 fuego tailwind watch                          # Watch mode for dev
 fuego tailwind install                        # Install Tailwind binary
 fuego tailwind info                           # Show installation info
+
+# OpenAPI
+fuego openapi generate [--output openapi.json] [--format json|yaml]
+fuego openapi serve [--port 8080]
 ```
 
 ## MCP Server (for AI Assistants)
@@ -338,6 +342,31 @@ app.DisableLogger()  // Turn off logging
 - `FUEGO_LOG_LEVEL` - debug, info, warn, error, off
 - `FUEGO_DEV=true` - Auto debug level
 - `GO_ENV=production` - Auto warn level
+
+## OpenAPI Generation
+
+Automatically generate OpenAPI 3.1 specs from your routes.
+
+```bash
+fuego openapi generate              # Generate openapi.json
+fuego openapi generate --format yaml # Generate YAML
+fuego openapi serve                 # Serve Swagger UI at :8080
+```
+
+**Runtime:**
+```go
+app.ServeOpenAPI(fuego.OpenAPIOptions{
+    Title:   "My API",
+    Version: "1.0.0",
+})
+// GET /openapi.json - OpenAPI spec
+// GET /docs - Swagger UI
+```
+
+**Auto-documentation:**
+- Comments above handlers → summaries & descriptions
+- File structure → tags
+- `[param]` → path parameters
 
 ## Configuration (fuego.yaml)
 

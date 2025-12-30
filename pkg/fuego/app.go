@@ -12,6 +12,21 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// OpenAPIOptions configures OpenAPI serving.
+type OpenAPIOptions struct {
+	// Spec configuration
+	Title       string // API title (required)
+	Version     string // API version (default: "1.0.0")
+	Description string // API description
+
+	// Endpoints
+	SpecPath string // Path for spec (default: "/openapi.json")
+	DocsPath string // Path for Swagger UI (default: "/docs")
+
+	// Features
+	Enabled bool // Enable/disable (default: true when called)
+}
+
 // App is the main Fuego application.
 type App struct {
 	// router is the underlying chi router
@@ -37,6 +52,9 @@ type App struct {
 
 	// loggerEnabled indicates if the app-level logger is enabled
 	loggerEnabled bool
+
+	// openAPIConfig holds OpenAPI configuration
+	openAPIConfig *OpenAPIOptions
 }
 
 // New creates a new Fuego application with the given options.
@@ -317,6 +335,101 @@ func (a *App) Head(pattern string, handler HandlerFunc) {
 // Options registers an OPTIONS route.
 func (a *App) Options(pattern string, handler HandlerFunc) {
 	a.RegisterRoute(http.MethodOptions, pattern, handler)
+}
+
+// ServeOpenAPI enables OpenAPI specification and Swagger UI endpoints.
+// GET /openapi.json - Returns the OpenAPI specification
+// GET /docs - Serves Swagger UI
+//
+// Example:
+//
+//	app.ServeOpenAPI(fuego.OpenAPIOptions{
+//	    Title:   "My API",
+//	    Version: "1.0.0",
+//	})
+func (a *App) ServeOpenAPI(opts OpenAPIOptions) {
+	// Set defaults
+	if opts.SpecPath == "" {
+		opts.SpecPath = "/openapi.json"
+	}
+	if opts.DocsPath == "" {
+		opts.DocsPath = "/docs"
+	}
+	if opts.Version == "" {
+		opts.Version = "1.0.0"
+	}
+	opts.Enabled = true
+	a.openAPIConfig = &opts
+
+	// Register /openapi.json endpoint
+	a.router.Get(opts.SpecPath, a.handleOpenAPISpec)
+
+	// Register /docs endpoint (Swagger UI)
+	a.router.Get(opts.DocsPath, a.handleSwaggerUI)
+	a.router.Get(opts.DocsPath+"/", a.handleSwaggerUI)
+}
+
+// handleOpenAPISpec serves the OpenAPI specification as JSON.
+func (a *App) handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
+	generator := NewOpenAPIGenerator(a.config.AppDir, OpenAPIConfig{
+		Title:       a.openAPIConfig.Title,
+		Version:     a.openAPIConfig.Version,
+		Description: a.openAPIConfig.Description,
+	})
+
+	jsonBytes, err := generator.GenerateJSON()
+	if err != nil {
+		http.Error(w, "Failed to generate spec", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	_, _ = w.Write(jsonBytes)
+}
+
+// handleSwaggerUI serves the Swagger UI HTML page.
+func (a *App) handleSwaggerUI(w http.ResponseWriter, r *http.Request) {
+	specPath := a.openAPIConfig.SpecPath
+	html := getSwaggerUIHTML(specPath)
+	w.Header().Set("Content-Type", "text/html")
+	_, _ = w.Write([]byte(html))
+}
+
+// getSwaggerUIHTML returns the HTML for Swagger UI.
+func getSwaggerUIHTML(specURL string) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+    <style>
+        body { margin: 0; padding: 0; }
+        .swagger-ui .topbar { display: none; }
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+        window.onload = function() {
+            SwaggerUIBundle({
+                url: "%s",
+                dom_id: '#swagger-ui',
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIBundle.SwaggerUIStandalonePreset
+                ],
+                layout: "BaseLayout",
+                deepLinking: true,
+                displayRequestDuration: true
+            });
+        };
+    </script>
+</body>
+</html>`, specURL)
 }
 
 // Static serves static files from a directory.

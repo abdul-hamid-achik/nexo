@@ -24,6 +24,9 @@ The Fuego framework provides a clean, intuitive API for building web application
   <Card title="Errors" icon="circle-exclamation" href="/docs/api/errors">
     HTTP error types and error handling helpers
   </Card>
+  <Card title="OpenAPI" icon="file-code" href="/docs/api/openapi">
+    Automatic OpenAPI specification generation
+  </Card>
   <Card title="CLI Reference" icon="terminal" href="/docs/api/cli">
     Command-line interface and code generation
   </Card>
@@ -53,6 +56,7 @@ The Fuego framework provides a clean, intuitive API for building web application
 | `app.Use(middleware)` | Add global middleware |
 | `app.Group(pattern, fn)` | Create a route group with shared middleware |
 | `app.Static(path, dir)` | Serve static files |
+| `app.ServeOpenAPI(opts)` | Enable OpenAPI spec and Swagger UI |
 | `app.Listen(addr)` | Start the HTTP server |
 | `app.Shutdown(ctx)` | Gracefully shutdown the server |
 

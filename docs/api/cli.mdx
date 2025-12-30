@@ -824,6 +824,123 @@ fuego tailwind info --json
 
 ---
 
+## fuego openapi generate
+
+Generate an OpenAPI specification file from your routes.
+
+```bash
+fuego openapi generate [flags]
+```
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--output` | `-o` | `openapi.json` | Output file path |
+| `--format` | `-f` | `json` | Output format (json or yaml) |
+| `--title` | | Project name | API title |
+| `--version` | | `1.0.0` | API version |
+| `--description` | | | API description |
+| `--server` | | | Server URL (e.g., http://localhost:3000) |
+| `--app-dir` | `-d` | `app` | App directory to scan |
+| `--openapi30` | | `false` | Use OpenAPI 3.0.3 instead of 3.1.0 |
+| `--json` | | `false` | JSON output for tooling |
+
+### Examples
+
+```bash
+# Default (outputs openapi.json)
+fuego openapi generate
+
+# YAML format
+fuego openapi generate --format yaml --output api.yaml
+
+# Custom title and version
+fuego openapi generate --title "User Service" --version "2.0.0"
+
+# With server URL
+fuego openapi generate --server "https://api.example.com"
+
+# OpenAPI 3.0 compatibility
+fuego openapi generate --openapi30
+
+# JSON output for CI/CD
+fuego openapi generate --json
+```
+
+### Output
+
+```
+  Fuego OpenAPI Generator
+
+  → Scanning routes...
+  ✓ Found 12 routes
+  → Generating OpenAPI spec...
+  ✓ Spec generated
+
+  Output:  openapi.json
+  Format:  OpenAPI 3.1.0 (json)
+  Routes:  12
+  Size:    4.52 KB
+```
+
+<Tip>
+Documentation is automatically extracted from comments above your handler functions.
+</Tip>
+
+---
+
+## fuego openapi serve
+
+Start a local server with Swagger UI for interactive API exploration.
+
+```bash
+fuego openapi serve [flags]
+```
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--port` | `-p` | `8080` | Port to serve on |
+| `--spec` | | | Use existing spec file instead of generating |
+| `--app-dir` | `-d` | `app` | App directory to scan |
+| `--title` | | Project name | API title |
+| `--version` | | `1.0.0` | API version |
+
+### Examples
+
+```bash
+# Generate and serve
+fuego openapi serve
+
+# Serve existing spec file
+fuego openapi serve --spec openapi.json
+
+# Custom port
+fuego openapi serve --port 9000
+```
+
+### Output
+
+```
+  Fuego OpenAPI Server
+
+  → Generating spec from routes...
+  ✓ Spec generated
+
+  ➜ Swagger UI:    http://localhost:8080/docs
+  ➜ OpenAPI JSON:  http://localhost:8080/openapi.json
+
+  Press Ctrl+C to stop
+```
+
+<Info>
+The server provides a Swagger UI interface for testing your API directly in the browser.
+</Info>
+
+---
+
 ## fuego mcp serve
 
 Start an MCP (Model Context Protocol) server for AI assistant integration.

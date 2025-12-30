@@ -587,6 +587,60 @@ When running `fuego build`:
 1. Tailwind builds minified CSS automatically
 2. Output goes to `static/css/output.css`
 
+## OpenAPI Generation
+
+Fuego automatically generates OpenAPI 3.1 specifications from your routes.
+
+### CLI Commands
+
+```bash
+# Generate openapi.json
+fuego openapi generate
+
+# Generate YAML format
+fuego openapi generate --format yaml --output api.yaml
+
+# Serve Swagger UI at localhost:8080
+fuego openapi serve
+
+# Custom port
+fuego openapi serve --port 9000
+```
+
+### Runtime Integration
+
+```go
+app := fuego.New()
+app.ServeOpenAPI(fuego.OpenAPIOptions{
+    Title:   "My API",
+    Version: "1.0.0",
+})
+// GET /openapi.json - OpenAPI spec
+// GET /docs - Swagger UI
+```
+
+### Automatic Documentation
+
+- **Comments** above handlers become summaries and descriptions
+- **File structure** determines tags  
+- **Path parameters** extracted automatically from `[param]` segments
+
+```go
+// Get retrieves a user by ID
+//
+// Returns detailed user information including profile and preferences.
+func Get(c *fuego.Context) error {
+    id := c.Param("id")
+    // ...
+}
+```
+
+Generated OpenAPI:
+- Summary: "Get retrieves a user by ID"
+- Description: "Returns detailed user information..."
+- Tag: Derived from directory (e.g., "users")
+- Parameters: `{id}` as path parameter
+
 ## HTMX Integration
 
 Fuego includes HTMX out of the box for interactive UIs without JavaScript.
