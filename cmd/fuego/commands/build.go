@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/abdul-hamid-achik/fuego/pkg/generator"
 	"github.com/abdul-hamid-achik/fuego/pkg/tools"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -150,6 +151,28 @@ func runBuild(cmd *cobra.Command, args []string) {
 		if !jsonOutput {
 			green := color.New(color.FgGreen).SprintFunc()
 			fmt.Printf("  %s CSS built\n", green("✓"))
+		}
+	}
+
+	// Regenerate routes before building
+	// This ensures the generated routes file is up-to-date with the latest route structure
+	if _, err := os.Stat("app"); !os.IsNotExist(err) {
+		if !jsonOutput {
+			yellow := color.New(color.FgYellow).SprintFunc()
+			fmt.Printf("  %s Generating routes...\n", yellow("→"))
+		}
+		if _, err := generator.ScanAndGenerateRoutes("app", "fuego_routes.go"); err != nil {
+			if jsonOutput {
+				printJSONError(fmt.Errorf("route generation failed: %w", err))
+			} else {
+				red := color.New(color.FgRed).SprintFunc()
+				fmt.Printf("  %s Route generation failed: %v\n", red("Error:"), err)
+			}
+			os.Exit(1)
+		}
+		if !jsonOutput {
+			green := color.New(color.FgGreen).SprintFunc()
+			fmt.Printf("  %s Routes generated\n", green("✓"))
 		}
 	}
 

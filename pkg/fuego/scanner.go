@@ -906,18 +906,21 @@ func toTitleCase(s string) string {
 	return strings.Join(words, " ")
 }
 
+// templPageSignatureRe matches templ Page() or templ Page(params...)
+var templPageSignatureRe = regexp.MustCompile(`templ\s+Page\s*\(`)
+
 // hasValidPageFunction checks if a page.templ file has a valid Page() function.
-// A valid page must export a templ Page() component.
+// A valid page must export a templ Page() component (with or without parameters).
 func (s *Scanner) hasValidPageFunction(filePath string) bool {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return false
 	}
 
-	// Look for "templ Page()" in the file content
+	// Look for "templ Page(" in the file content (supports both Page() and Page(params))
 	// This is a simple check - templ files aren't valid Go files so we can't use AST
 	contentStr := string(content)
-	return strings.Contains(contentStr, "templ Page()")
+	return templPageSignatureRe.MatchString(contentStr)
 }
 
 // hasValidLayoutFunction checks if a layout.templ file has a valid Layout() function.

@@ -137,22 +137,118 @@ Nested layouts override parent layouts.
 
 ## Dynamic Pages
 
+Dynamic pages use bracket notation in directory names to capture URL parameters.
+
 ### URL Parameters
 
-Create `app/users/[id]/page.templ`:
+Create `app/posts/[slug]/page.templ`:
 
 ```go
-package users
+package slug
 
-templ Page(user User) {
-    <div class="user-profile">
-        <h1>{ user.Name }</h1>
-        <p>{ user.Email }</p>
+templ Page(slug string) {
+    <article>
+        <h1>Post: { slug }</h1>
+        <div hx-get={ "/api/posts/" + slug } hx-trigger="load">
+            Loading content...
+        </div>
+    </article>
+}
+```
+
+This maps to `/posts/:slug`. The `slug` parameter is automatically extracted from the URL and passed to your `Page()` function.
+
+### Parameter Matching
+
+Fuego matches URL parameters to `Page()` parameters **by name**. Your parameter names should match the bracket directory names:
+
+| Directory | Page Signature | Match |
+|-----------|---------------|-------|
+| `[slug]` | `Page(slug string)` | ✓ |
+| `[id]` | `Page(id string)` | ✓ |
+| `[id]` | `Page(userId string)` | ⚠️ Warning |
+
+<Warning>
+If parameter names don't match, Fuego shows a warning during route generation. The page still renders, but mismatched parameters receive zero values.
+</Warning>
+
+### Multiple Parameters
+
+For nested dynamic routes:
+
+```go
+// app/orgs/[orgId]/users/[userId]/page.templ
+package userId
+
+templ Page(orgId, userId string) {
+    <div>
+        <p>Organization: { orgId }</p>
+        <p>User: { userId }</p>
     </div>
 }
 ```
 
-Access via `/users/123`.
+This maps to `/orgs/:orgId/users/:userId`.
+
+### Catch-All Routes
+
+Use `[...param]` for catch-all routes:
+
+```go
+// app/docs/[...slug]/page.templ
+package slug
+
+templ Page(slug string) {
+    <div>
+        <p>Path: { slug }</p>
+    </div>
+}
+```
+
+This matches `/docs/anything/here/deeply/nested` with `slug = "anything/here/deeply/nested"`.
+
+### Pages with Additional Props
+
+You can accept additional parameters beyond URL params. Non-URL parameters receive zero values unless you fetch data in a custom handler:
+
+```go
+// app/users/[id]/page.templ
+package id
+
+type User struct {
+    ID    string
+    Name  string
+    Email string
+}
+
+templ Page(id string, user User) {
+    <div class="user-profile">
+        if user.Name != "" {
+            <h1>{ user.Name }</h1>
+            <p>{ user.Email }</p>
+        } else {
+            <p>Loading user { id }...</p>
+        }
+    </div>
+}
+```
+
+<Info>
+For pages that need to load data before rendering, consider using HTMX to load content dynamically, or create a custom route handler.
+</Info>
+
+### Generated Symlinks
+
+Due to Go's restriction on brackets in import paths, Fuego creates temporary symlinks for bracket directories:
+
+```
+app/posts/[slug]/  →  app/posts/_slug/  (symlink)
+```
+
+These symlinks are:
+- Created automatically during `fuego dev` and `fuego build`
+- Should be added to `.gitignore`
+- Cleaned up when the dev server stops
 
 ## Components
 

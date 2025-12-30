@@ -632,3 +632,522 @@ func TestDirToPattern(t *testing.T) {
 		})
 	}
 }
+
+func TestParseTemplParams(t *testing.T) {
+	tests := []struct {
+		name      string
+		paramsStr string
+		wantCount int
+		wantNames []string
+		wantTypes []string
+	}{
+		{
+			name:      "empty params",
+			paramsStr: "",
+			wantCount: 0,
+		},
+		{
+			name:      "single string param",
+			paramsStr: "slug string",
+			wantCount: 1,
+			wantNames: []string{"slug"},
+			wantTypes: []string{"string"},
+		},
+		{
+			name:      "two string params",
+			paramsStr: "id string, name string",
+			wantCount: 2,
+			wantNames: []string{"id", "name"},
+			wantTypes: []string{"string", "string"},
+		},
+		{
+			name:      "shorthand params",
+			paramsStr: "a, b string",
+			wantCount: 2,
+			wantNames: []string{"a", "b"},
+			wantTypes: []string{"string", "string"},
+		},
+		{
+			name:      "struct param",
+			paramsStr: "user User",
+			wantCount: 1,
+			wantNames: []string{"user"},
+			wantTypes: []string{"User"},
+		},
+		{
+			name:      "pointer param",
+			paramsStr: "user *User",
+			wantCount: 1,
+			wantNames: []string{"user"},
+			wantTypes: []string{"*User"},
+		},
+		{
+			name:      "mixed params",
+			paramsStr: "slug string, user User, count int",
+			wantCount: 3,
+			wantNames: []string{"slug", "user", "count"},
+			wantTypes: []string{"string", "User", "int"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params := parseTemplParams(tt.paramsStr)
+			if len(params) != tt.wantCount {
+				t.Errorf("parseTemplParams(%q) returned %d params, want %d", tt.paramsStr, len(params), tt.wantCount)
+				return
+			}
+
+			for i, param := range params {
+				if param.Name != tt.wantNames[i] {
+					t.Errorf("param[%d].Name = %q, want %q", i, param.Name, tt.wantNames[i])
+				}
+				if param.Type != tt.wantTypes[i] {
+					t.Errorf("param[%d].Type = %q, want %q", i, param.Type, tt.wantTypes[i])
+				}
+			}
+		})
+	}
+}
+
+func TestExtractURLParams(t *testing.T) {
+	tests := []struct {
+		name      string
+		dir       string
+		appDir    string
+		wantCount int
+		wantNames []string
+	}{
+		{
+			name:      "no params",
+			dir:       "app/posts",
+			appDir:    "app",
+			wantCount: 0,
+		},
+		{
+			name:      "single param",
+			dir:       "app/posts/[slug]",
+			appDir:    "app",
+			wantCount: 1,
+			wantNames: []string{"slug"},
+		},
+		{
+			name:      "nested params",
+			dir:       "app/users/[userId]/posts/[postId]",
+			appDir:    "app",
+			wantCount: 2,
+			wantNames: []string{"userId", "postId"},
+		},
+		{
+			name:      "catch-all param",
+			dir:       "app/docs/[...slug]",
+			appDir:    "app",
+			wantCount: 1,
+			wantNames: []string{"slug"},
+		},
+		{
+			name:      "optional catch-all param",
+			dir:       "app/shop/[[...categories]]",
+			appDir:    "app",
+			wantCount: 1,
+			wantNames: []string{"categories"},
+		},
+		{
+			name:      "with route group",
+			dir:       "app/(admin)/users/[id]",
+			appDir:    "app",
+			wantCount: 1,
+			wantNames: []string{"id"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params := extractURLParams(tt.dir, tt.appDir)
+			if len(params) != tt.wantCount {
+				t.Errorf("extractURLParams(%q, %q) returned %d params, want %d", tt.dir, tt.appDir, len(params), tt.wantCount)
+				return
+			}
+
+			for i, param := range params {
+				if param != tt.wantNames[i] {
+					t.Errorf("param[%d] = %q, want %q", i, param, tt.wantNames[i])
+				}
+			}
+		})
+	}
+}
+
+func TestSanitizePathForImport(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "no brackets",
+			path: "app/posts/details",
+			want: "app/posts/details",
+		},
+		{
+			name: "single dynamic segment",
+			path: "app/posts/[slug]",
+			want: "app/posts/_slug",
+		},
+		{
+			name: "nested dynamic segments",
+			path: "app/users/[userId]/posts/[postId]",
+			want: "app/users/_userId/posts/_postId",
+		},
+		{
+			name: "catch-all segment",
+			path: "app/docs/[...slug]",
+			want: "app/docs/_catchall_slug",
+		},
+		{
+			name: "optional catch-all segment",
+			path: "app/shop/[[...categories]]",
+			want: "app/shop/_opt_catchall_categories",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizePathForImport(tt.path)
+			if got != tt.want {
+				t.Errorf("sanitizePathForImport(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeDirName(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"[slug]", "_slug"},
+		{"[id]", "_id"},
+		{"[...slug]", "_catchall_slug"},
+		{"[[...categories]]", "_opt_catchall_categories"},
+		{"posts", "posts"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeDirName(tt.name)
+			if got != tt.want {
+				t.Errorf("sanitizeDirName(%q) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidatePageParams(t *testing.T) {
+	tests := []struct {
+		name         string
+		page         *PageRegistration
+		wantWarnings int
+	}{
+		{
+			name: "matching params",
+			page: &PageRegistration{
+				FilePath:  "app/posts/[slug]/page.templ",
+				URLParams: []string{"slug"},
+				Params:    []PageParam{{Name: "slug", Type: "string"}},
+			},
+			wantWarnings: 0,
+		},
+		{
+			name: "url param not in Page()",
+			page: &PageRegistration{
+				FilePath:  "app/posts/[slug]/page.templ",
+				URLParams: []string{"slug"},
+				Params:    []PageParam{},
+			},
+			wantWarnings: 1,
+		},
+		{
+			name: "Page() param not in URL",
+			page: &PageRegistration{
+				FilePath:  "app/dashboard/page.templ",
+				URLParams: []string{},
+				Params:    []PageParam{{Name: "user", Type: "User"}},
+			},
+			wantWarnings: 1,
+		},
+		{
+			name: "multiple mismatches",
+			page: &PageRegistration{
+				FilePath:  "app/posts/[slug]/page.templ",
+				URLParams: []string{"slug"},
+				Params:    []PageParam{{Name: "id", Type: "string"}, {Name: "user", Type: "User"}},
+			},
+			wantWarnings: 3, // slug not in Page(), id not in URL, user not in URL
+		},
+		{
+			name: "partial match",
+			page: &PageRegistration{
+				FilePath:  "app/posts/[slug]/page.templ",
+				URLParams: []string{"slug"},
+				Params:    []PageParam{{Name: "slug", Type: "string"}, {Name: "user", Type: "User"}},
+			},
+			wantWarnings: 1, // user not in URL
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			warnings := validatePageParams(tt.page)
+			if len(warnings) != tt.wantWarnings {
+				t.Errorf("validatePageParams() returned %d warnings, want %d", len(warnings), tt.wantWarnings)
+				for _, w := range warnings {
+					t.Logf("  Warning: %s", w.Message)
+				}
+			}
+		})
+	}
+}
+
+func TestGenerateRoutesFile_WithDynamicPages(t *testing.T) {
+	t.Run("page with params", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		outputPath := filepath.Join(tmpDir, "fuego_routes.go")
+
+		result, err := GenerateRoutesFile(RoutesGenConfig{
+			ModuleName: "testapp",
+			OutputPath: outputPath,
+			Pages: []PageRegistration{
+				{
+					ImportPath:     "testapp/app/posts/_slug",
+					Package:        "slug",
+					Pattern:        "/posts/{slug}",
+					Title:          "Post",
+					FilePath:       "app/posts/[slug]/page.templ",
+					Params:         []PageParam{{Name: "slug", Type: "string", FromPath: true}},
+					URLParams:      []string{"slug"},
+					HasParams:      true,
+					ParamSignature: "Page(slug string)",
+					UseSymlink:     true,
+					SymlinkPath:    "app/posts/_slug",
+				},
+			},
+		})
+
+		if err != nil {
+			t.Fatalf("GenerateRoutesFile() error = %v", err)
+		}
+
+		if len(result.Files) != 1 {
+			t.Errorf("Expected 1 file, got %d", len(result.Files))
+		}
+
+		content, err := os.ReadFile(outputPath)
+		if err != nil {
+			t.Fatalf("Failed to read file: %v", err)
+		}
+
+		contentStr := string(content)
+
+		// Check for dynamic page handler
+		if !strings.Contains(contentStr, `app.Get("/posts/{slug}"`) {
+			t.Error("Expected file to register GET /posts/{slug}")
+		}
+
+		// Check for param extraction
+		if !strings.Contains(contentStr, `c.Param("slug")`) {
+			t.Error("Expected file to extract slug param")
+		}
+
+		// Check for Page() call with param
+		if !strings.Contains(contentStr, `.Page(slug)`) {
+			t.Error("Expected file to call Page(slug)")
+		}
+	})
+
+	t.Run("page without params", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		outputPath := filepath.Join(tmpDir, "fuego_routes.go")
+
+		result, err := GenerateRoutesFile(RoutesGenConfig{
+			ModuleName: "testapp",
+			OutputPath: outputPath,
+			Pages: []PageRegistration{
+				{
+					ImportPath:     "testapp/app/about",
+					Package:        "about",
+					Pattern:        "/about",
+					Title:          "About",
+					FilePath:       "app/about/page.templ",
+					Params:         nil,
+					URLParams:      nil,
+					HasParams:      false,
+					ParamSignature: "Page()",
+					UseSymlink:     false,
+				},
+			},
+		})
+
+		if err != nil {
+			t.Fatalf("GenerateRoutesFile() error = %v", err)
+		}
+
+		content, err := os.ReadFile(outputPath)
+		if err != nil {
+			t.Fatalf("Failed to read file: %v", err)
+		}
+
+		contentStr := string(content)
+
+		// Check for static page handler
+		if !strings.Contains(contentStr, `app.Get("/about"`) {
+			t.Error("Expected file to register GET /about")
+		}
+
+		// Check for Page() call without params
+		if !strings.Contains(contentStr, `.Page()`) {
+			t.Error("Expected file to call Page()")
+		}
+
+		_ = result
+	})
+
+	t.Run("multiple params", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		outputPath := filepath.Join(tmpDir, "fuego_routes.go")
+
+		result, err := GenerateRoutesFile(RoutesGenConfig{
+			ModuleName: "testapp",
+			OutputPath: outputPath,
+			Pages: []PageRegistration{
+				{
+					ImportPath: "testapp/app/orgs/_orgId/users/_userId",
+					Package:    "userId",
+					Pattern:    "/orgs/{orgId}/users/{userId}",
+					Title:      "User",
+					FilePath:   "app/orgs/[orgId]/users/[userId]/page.templ",
+					Params: []PageParam{
+						{Name: "orgId", Type: "string", FromPath: true},
+						{Name: "userId", Type: "string", FromPath: true},
+					},
+					URLParams:      []string{"orgId", "userId"},
+					HasParams:      true,
+					ParamSignature: "Page(orgId, userId string)",
+					UseSymlink:     true,
+				},
+			},
+		})
+
+		if err != nil {
+			t.Fatalf("GenerateRoutesFile() error = %v", err)
+		}
+
+		content, err := os.ReadFile(outputPath)
+		if err != nil {
+			t.Fatalf("Failed to read file: %v", err)
+		}
+
+		contentStr := string(content)
+
+		// Check for both param extractions
+		if !strings.Contains(contentStr, `c.Param("orgId")`) {
+			t.Error("Expected file to extract orgId param")
+		}
+		if !strings.Contains(contentStr, `c.Param("userId")`) {
+			t.Error("Expected file to extract userId param")
+		}
+
+		// Check for Page() call with both params
+		if !strings.Contains(contentStr, `.Page(orgId, userId)`) {
+			t.Error("Expected file to call Page(orgId, userId)")
+		}
+
+		_ = result
+	})
+}
+
+func TestZeroValue(t *testing.T) {
+	tests := []struct {
+		typeName string
+		want     string
+	}{
+		{"string", `""`},
+		{"int", "0"},
+		{"int64", "0"},
+		{"float64", "0"},
+		{"bool", "false"},
+		{"User", "User{}"},
+		{"*User", "nil"},
+		{"MyStruct", "MyStruct{}"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.typeName, func(t *testing.T) {
+			got := zeroValue(tt.typeName)
+			if got != tt.want {
+				t.Errorf("zeroValue(%q) = %q, want %q", tt.typeName, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateAndCleanupDynamicDirSymlinks(t *testing.T) {
+	// Create a temporary app directory structure
+	tmpDir := t.TempDir()
+	appDir := filepath.Join(tmpDir, "app")
+
+	// Create bracket directories
+	slugDir := filepath.Join(appDir, "posts", "[slug]")
+	if err := os.MkdirAll(slugDir, 0755); err != nil {
+		t.Fatalf("Failed to create test directory: %v", err)
+	}
+
+	// Create a page.templ file in the bracket directory
+	pageContent := `package slug
+
+templ Page(slug string) {
+	<h1>Post: { slug }</h1>
+}
+`
+	if err := os.WriteFile(filepath.Join(slugDir, "page.templ"), []byte(pageContent), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Test symlink creation
+	mappings, cleanup, err := CreateDynamicDirSymlinks(appDir)
+	if err != nil {
+		t.Fatalf("CreateDynamicDirSymlinks() error = %v", err)
+	}
+
+	if len(mappings) != 1 {
+		t.Errorf("Expected 1 mapping, got %d", len(mappings))
+	}
+
+	if len(mappings) > 0 {
+		// Check symlink exists
+		symlinkPath := filepath.Join(appDir, "posts", "_slug")
+		info, err := os.Lstat(symlinkPath)
+		if err != nil {
+			t.Errorf("Symlink not created: %v", err)
+		} else if info.Mode()&os.ModeSymlink == 0 {
+			t.Error("Expected a symlink, got regular file/dir")
+		}
+
+		// Check symlink target
+		target, err := os.Readlink(symlinkPath)
+		if err != nil {
+			t.Errorf("Failed to read symlink: %v", err)
+		} else if target != "[slug]" {
+			t.Errorf("Symlink target = %q, want %q", target, "[slug]")
+		}
+	}
+
+	// Test cleanup
+	cleanup()
+
+	// Check symlink is removed
+	symlinkPath := filepath.Join(appDir, "posts", "_slug")
+	if _, err := os.Lstat(symlinkPath); !os.IsNotExist(err) {
+		t.Error("Symlink was not cleaned up")
+	}
+}

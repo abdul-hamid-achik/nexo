@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Dynamic Page Routes with Parameters**
+  - Page templates in bracket directories (e.g., `[slug]`, `[id]`) are now properly detected
+  - URL parameters are automatically wired to `Page()` function parameters
+  - Support for `Page(slug string)`, `Page(id, name string)`, and complex signatures
+  - Catch-all routes (`[...slug]`) and optional catch-all (`[[...slug]]`) supported
+
+- **Symlink System for Bracket Directories**
+  - Automatic creation of symlinks for directories with brackets (Go import path restriction)
+  - `[slug]` → `_slug`, `[...path]` → `_catchall_path`, `[[...cat]]` → `_opt_catchall_cat`
+  - Symlinks are created during `fuego dev` and `fuego build`
+
+- **Parameter Validation Warnings**
+  - Warnings displayed when URL parameters don't match `Page()` parameters
+  - Warnings when `Page()` accepts parameters not in the URL path
+  - Pages still render with zero values for unmatched parameters
+
+- **Generator Schema Version**
+  - Added `GeneratorSchemaVersion` for tracking generated code compatibility
+  - Version header in generated `fuego_routes.go` files
+
+### Changed
+
+- **Build Command Improvements**
+  - `fuego build` now regenerates routes before building
+  - Ensures generated routes file is always up-to-date
+
+- **Page Validation**
+  - Updated to accept both `Page()` and `Page(params...)` signatures
+  - Backward compatible with existing pages
+
+### Fixed
+
+- **Bug: Dynamic Page Routes Not Detected** ([#issue])
+  - Pages in bracket directories like `app/posts/[slug]/page.templ` are now detected
+  - Route generation creates proper handlers with parameter extraction
+  - Import paths use symlinks to work around Go's bracket restriction
+
 ## [0.7.4] - 2024-12-30
 
 ### Added

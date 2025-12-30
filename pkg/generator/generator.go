@@ -394,8 +394,65 @@ func pathToPattern(path string) string {
 	return strings.Join(result, "/")
 }
 
+// routeTemplateFuncs contains custom template functions for route generation.
+var routeTemplateFuncs = template.FuncMap{
+	"paramArgs": func(params []PageParam) string {
+		var args []string
+		for _, p := range params {
+			if p.FromPath {
+				args = append(args, p.Name)
+			} else {
+				// Use zero value for params not from URL path
+				args = append(args, zeroValue(p.Type))
+			}
+		}
+		return strings.Join(args, ", ")
+	},
+}
+
+// zeroValue returns the zero value literal for a Go type.
+func zeroValue(typeName string) string {
+	switch typeName {
+	case "string":
+		return `""`
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64",
+		"float32", "float64":
+		return "0"
+	case "bool":
+		return "false"
+	default:
+		// For structs and other types, use the type name with empty braces
+		// e.g., "User" -> "User{}"
+		if strings.HasPrefix(typeName, "*") {
+			return "nil"
+		}
+		return typeName + "{}"
+	}
+}
+
 func executeTemplate(filePath, tmplContent string, data any) error {
 	tmpl, err := template.New(filepath.Base(filePath)).Parse(tmplContent)
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	f, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if err := tmpl.Execute(f, data); err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return nil
+}
+
+// executeRouteTemplate executes a template with route-specific functions.
+func executeRouteTemplate(filePath, tmplContent string, data any) error {
+	tmpl, err := template.New(filepath.Base(filePath)).Funcs(routeTemplateFuncs).Parse(tmplContent)
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}
@@ -456,6 +513,13 @@ type ProxyRegistration struct {
 	HasConfig   bool   // Whether ProxyConfig is defined
 }
 
+// PageParam represents a parameter in a Page() templ function.
+type PageParam struct {
+	Name     string // Parameter name (e.g., "slug")
+	Type     string // Parameter type (e.g., "string")
+	FromPath bool   // True if this param comes from URL path
+}
+
 // PageRegistration holds information for page registration.
 type PageRegistration struct {
 	ImportPath  string // Full import path for the generated _templ.go package
@@ -464,6 +528,14 @@ type PageRegistration struct {
 	Pattern     string // Route pattern (e.g., "/about", "/dashboard/settings")
 	Title       string // Page title
 	FilePath    string // Source file path (page.templ)
+
+	// Dynamic page support
+	Params         []PageParam // Parameters extracted from templ Page() signature
+	URLParams      []string    // Parameter names extracted from URL path (e.g., [slug] -> "slug")
+	HasParams      bool        // True if Page() accepts parameters
+	ParamSignature string      // Original signature from templ file (for comments)
+	UseSymlink     bool        // True if import path uses a symlink (bracket dir)
+	SymlinkPath    string      // Path to the symlink (if UseSymlink is true)
 }
 
 // LayoutRegistration holds information for layout registration.
@@ -614,7 +686,7 @@ func GenerateRoutesFile(cfg RoutesGenConfig) (*Result, error) {
 		HasPages:    hasPages,
 	}
 
-	if err := executeTemplate(cfg.OutputPath, routesGenTemplate, data); err != nil {
+	if err := executeRouteTemplate(cfg.OutputPath, routesGenTemplate, data); err != nil {
 		return nil, err
 	}
 
@@ -630,6 +702,12 @@ var httpMethods = map[string]string{
 	"Delete":  http.MethodDelete,
 	"Head":    http.MethodHead,
 	"Options": http.MethodOptions,
+}
+
+// GenerationWarning represents a warning during route generation.
+type GenerationWarning struct {
+	File    string
+	Message string
 }
 
 // ScanAndGenerateRoutes scans the app directory and generates the routes file.
@@ -655,7 +733,20 @@ func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 		return GenerateRoutesFile(cfg)
 	}
 
+	// Create symlinks for bracket directories before scanning
+	// This is necessary because Go import paths cannot contain brackets
+	symlinks, cleanup, err := CreateDynamicDirSymlinks(appDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create symlinks for dynamic directories: %w", err)
+	}
+	// Note: We don't call cleanup() here because the symlinks are needed for compilation
+	// They will be cleaned up by CleanupDynamicDirSymlinks() when the server stops
+	_ = symlinks // Symlinks are used implicitly through the sanitized import paths
+	_ = cleanup  // Cleanup is available but not called during generation
+
 	fset := token.NewFileSet()
+
+	var warnings []GenerationWarning
 
 	// Scan for routes, middleware, pages, and layouts
 	err = filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
@@ -671,8 +762,14 @@ func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 			return nil
 		}
 
-		// Skip private folders
+		// Skip private folders, but NOT our generated symlinks
 		if info.IsDir() && strings.HasPrefix(info.Name(), "_") {
+			// Check if this is a symlink (our generated ones)
+			if info.Mode()&os.ModeSymlink != 0 {
+				// Skip symlinks - we'll scan through the original bracket dirs
+				return filepath.SkipDir
+			}
+			// Skip regular private folders like _components, _utils
 			return filepath.SkipDir
 		}
 
@@ -713,6 +810,9 @@ func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 				return err
 			}
 			if page != nil {
+				// Check for parameter mismatches and add warnings
+				pageWarnings := validatePageParams(page)
+				warnings = append(warnings, pageWarnings...)
 				cfg.Pages = append(cfg.Pages, *page)
 			}
 
@@ -733,8 +833,16 @@ func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 		return nil, fmt.Errorf("failed to scan app directory: %w", err)
 	}
 
+	// Print warnings
+	for _, w := range warnings {
+		fmt.Printf("Warning: %s: %s\n", w.File, w.Message)
+	}
+
 	return GenerateRoutesFile(cfg)
 }
+
+// templPageSignatureRe matches templ Page() or templ Page(params...)
+var templPageSignatureRe = regexp.MustCompile(`templ\s+Page\s*\(([^)]*)\)`)
 
 // scanPageFile scans a page.templ file and returns registration info
 func scanPageFile(filePath, appDir, moduleName string) (*PageRegistration, error) {
@@ -745,27 +853,243 @@ func scanPageFile(filePath, appDir, moduleName string) (*PageRegistration, error
 	}
 
 	contentStr := string(content)
-	if !strings.Contains(contentStr, "templ Page()") {
+
+	// Find Page() function with optional parameters
+	matches := templPageSignatureRe.FindStringSubmatch(contentStr)
+	if len(matches) < 2 {
 		return nil, nil // Skip pages without Page() function
 	}
 
+	// Parse parameters from the signature
+	paramsStr := strings.TrimSpace(matches[1])
+	params := parseTemplParams(paramsStr)
+	hasParams := len(params) > 0
+	paramSignature := "Page(" + paramsStr + ")"
+
+	// Get the directory path
+	dir := filepath.Dir(filePath)
+
 	// Get the import path and pattern
-	relDir, err := filepath.Rel(".", filepath.Dir(filePath))
+	relDir, err := filepath.Rel(".", dir)
 	if err != nil {
 		return nil, err
 	}
+
+	// Extract URL parameters from the path (e.g., [slug] -> "slug")
+	urlParams := extractURLParams(dir, appDir)
+
+	// Check if the path contains brackets (needs symlink)
 	importPath := moduleName + "/" + filepath.ToSlash(relDir)
-	pattern := pagePathToPattern(filepath.Dir(filePath), appDir)
-	pkgName := packageNameFromDir(filepath.Dir(filePath))
-	title := deriveTitle(filepath.Dir(filePath), appDir)
+	useSymlink := strings.Contains(relDir, "[")
+	var symlinkPath string
+
+	if useSymlink {
+		// Create sanitized import path for symlink
+		sanitizedRelDir := sanitizePathForImport(relDir)
+		importPath = moduleName + "/" + filepath.ToSlash(sanitizedRelDir)
+		symlinkPath = sanitizedRelDir
+	}
+
+	pattern := pagePathToPattern(dir, appDir)
+	pkgName := packageNameFromDir(dir)
+	title := deriveTitle(dir, appDir)
 
 	return &PageRegistration{
-		ImportPath: importPath,
-		Package:    pkgName,
-		Pattern:    pattern,
-		Title:      title,
-		FilePath:   filePath,
+		ImportPath:     importPath,
+		Package:        pkgName,
+		Pattern:        pattern,
+		Title:          title,
+		FilePath:       filePath,
+		Params:         params,
+		URLParams:      urlParams,
+		HasParams:      hasParams,
+		ParamSignature: paramSignature,
+		UseSymlink:     useSymlink,
+		SymlinkPath:    symlinkPath,
 	}, nil
+}
+
+// parseTemplParams parses parameter declarations from a templ function signature
+// e.g., "slug string" -> [{Name: "slug", Type: "string"}]
+// e.g., "slug, id string" -> [{Name: "slug", Type: "string"}, {Name: "id", Type: "string"}]
+func parseTemplParams(paramsStr string) []PageParam {
+	if paramsStr == "" {
+		return nil
+	}
+
+	var params []PageParam
+
+	// Split by comma for multiple params
+	paramDecls := strings.Split(paramsStr, ",")
+
+	for _, decl := range paramDecls {
+		decl = strings.TrimSpace(decl)
+		if decl == "" {
+			continue
+		}
+
+		// Split into parts (name type or just name if type follows)
+		parts := strings.Fields(decl)
+		if len(parts) == 0 {
+			continue
+		}
+
+		if len(parts) >= 2 {
+			// Full declaration: "name Type"
+			params = append(params, PageParam{
+				Name: parts[0],
+				Type: strings.Join(parts[1:], " "),
+			})
+		} else {
+			// Just name, type will be inferred or added later
+			// This handles Go's shorthand: "a, b string" -> a and b are both string
+			params = append(params, PageParam{
+				Name: parts[0],
+				Type: "", // Will be filled in by looking at the next param with a type
+			})
+		}
+	}
+
+	// Handle Go's parameter shorthand (a, b string means both are string)
+	// Work backwards to fill in missing types
+	var lastType string
+	for i := len(params) - 1; i >= 0; i-- {
+		if params[i].Type != "" {
+			lastType = params[i].Type
+		} else if lastType != "" {
+			params[i].Type = lastType
+		} else {
+			// Default to string if we can't determine the type
+			params[i].Type = "string"
+		}
+	}
+
+	return params
+}
+
+// extractURLParams extracts parameter names from bracket directories in the path
+// e.g., "app/posts/[slug]" -> ["slug"]
+// e.g., "app/users/[id]/posts/[postId]" -> ["id", "postId"]
+func extractURLParams(dir, appDir string) []string {
+	rel, err := filepath.Rel(appDir, dir)
+	if err != nil {
+		return nil
+	}
+
+	var params []string
+	segments := strings.Split(rel, string(filepath.Separator))
+
+	for _, seg := range segments {
+		// Skip route groups
+		if strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")") {
+			continue
+		}
+
+		// Extract param from [[...param]]
+		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
+			params = append(params, matches[1])
+			continue
+		}
+
+		// Extract param from [...param]
+		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			params = append(params, matches[1])
+			continue
+		}
+
+		// Extract param from [param]
+		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			params = append(params, matches[1])
+			continue
+		}
+	}
+
+	return params
+}
+
+// validatePageParams checks for parameter mismatches between URL path and Page() signature.
+// Returns warnings for any mismatches found.
+func validatePageParams(page *PageRegistration) []GenerationWarning {
+	var warnings []GenerationWarning
+
+	// Create sets for easier lookup
+	urlParamSet := make(map[string]bool)
+	for _, p := range page.URLParams {
+		urlParamSet[p] = true
+	}
+
+	templParamSet := make(map[string]bool)
+	for _, p := range page.Params {
+		templParamSet[p.Name] = true
+	}
+
+	// Check for URL params not in Page() signature
+	for _, urlParam := range page.URLParams {
+		if !templParamSet[urlParam] {
+			warnings = append(warnings, GenerationWarning{
+				File: page.FilePath,
+				Message: fmt.Sprintf(
+					"URL parameter '%s' from path is not accepted by Page(). "+
+						"Consider adding it to the Page signature: templ Page(%s string)",
+					urlParam, urlParam,
+				),
+			})
+		}
+	}
+
+	// Check for Page() params not in URL path
+	for _, templParam := range page.Params {
+		if !urlParamSet[templParam.Name] {
+			warnings = append(warnings, GenerationWarning{
+				File: page.FilePath,
+				Message: fmt.Sprintf(
+					"Page parameter '%s' is not found in URL path. "+
+						"It will be passed as zero value (%s zero value). "+
+						"Consider fetching data in the handler instead.",
+					templParam.Name, templParam.Type,
+				),
+			})
+		}
+	}
+
+	// Mark which params come from URL path
+	for i := range page.Params {
+		page.Params[i].FromPath = urlParamSet[page.Params[i].Name]
+	}
+
+	return warnings
+}
+
+// sanitizePathForImport converts bracket directories to valid Go import path segments
+// e.g., "app/posts/[slug]" -> "app/posts/_slug"
+// e.g., "app/docs/[...path]" -> "app/docs/_catchall_path"
+func sanitizePathForImport(path string) string {
+	segments := strings.Split(path, string(filepath.Separator))
+	var sanitized []string
+
+	for _, seg := range segments {
+		// Handle [[...param]] -> _opt_catchall_param
+		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
+			sanitized = append(sanitized, "_opt_catchall_"+matches[1])
+			continue
+		}
+
+		// Handle [...param] -> _catchall_param
+		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			sanitized = append(sanitized, "_catchall_"+matches[1])
+			continue
+		}
+
+		// Handle [param] -> _param
+		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			sanitized = append(sanitized, "_"+matches[1])
+			continue
+		}
+
+		sanitized = append(sanitized, seg)
+	}
+
+	return strings.Join(sanitized, string(filepath.Separator))
 }
 
 // scanLayoutFile scans a layout.templ file and returns registration info
@@ -1270,4 +1594,144 @@ func isValidProxySignature(fn *ast.FuncDecl) bool {
 	}
 
 	return false
+}
+
+// SymlinkMapping represents a mapping from a bracket directory to its symlink.
+type SymlinkMapping struct {
+	Original    string // Original path with brackets (e.g., "app/posts/[slug]")
+	Sanitized   string // Sanitized path for symlink (e.g., "app/posts/_slug")
+	SymlinkPath string // Full path to the symlink
+}
+
+// CreateDynamicDirSymlinks creates symlinks for directories with bracket notation.
+// This is necessary because Go's import paths cannot contain brackets.
+// Returns the list of created symlinks and a cleanup function.
+func CreateDynamicDirSymlinks(appDir string) ([]SymlinkMapping, func(), error) {
+	var mappings []SymlinkMapping
+
+	// First, collect all bracket directories
+	err := filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.IsDir() {
+			return nil
+		}
+
+		// Skip hidden and private directories
+		if strings.HasPrefix(info.Name(), ".") || strings.HasPrefix(info.Name(), "_") {
+			return filepath.SkipDir
+		}
+
+		// Check if this directory contains brackets
+		dirName := info.Name()
+		if !strings.Contains(dirName, "[") {
+			return nil
+		}
+
+		// Create the sanitized directory name
+		sanitizedName := sanitizeDirName(dirName)
+		sanitizedPath := filepath.Join(filepath.Dir(path), sanitizedName)
+
+		// Check if symlink already exists
+		if existingInfo, err := os.Lstat(sanitizedPath); err == nil {
+			// If it's a symlink, check if it points to the right place
+			if existingInfo.Mode()&os.ModeSymlink != 0 {
+				target, err := os.Readlink(sanitizedPath)
+				if err == nil && target == dirName {
+					// Symlink exists and is correct
+					mappings = append(mappings, SymlinkMapping{
+						Original:    path,
+						Sanitized:   sanitizedPath,
+						SymlinkPath: sanitizedPath,
+					})
+					return nil
+				}
+			}
+			// Remove existing file/symlink that doesn't match
+			if err := os.Remove(sanitizedPath); err != nil {
+				return fmt.Errorf("failed to remove existing file %s: %w", sanitizedPath, err)
+			}
+		}
+
+		// Create relative symlink (dirName, not the full path)
+		if err := os.Symlink(dirName, sanitizedPath); err != nil {
+			return fmt.Errorf("failed to create symlink %s -> %s: %w", sanitizedPath, dirName, err)
+		}
+
+		mappings = append(mappings, SymlinkMapping{
+			Original:    path,
+			Sanitized:   sanitizedPath,
+			SymlinkPath: sanitizedPath,
+		})
+
+		return nil
+	})
+
+	if err != nil {
+		// Cleanup any symlinks we created on error
+		for _, m := range mappings {
+			_ = os.Remove(m.SymlinkPath)
+		}
+		return nil, nil, err
+	}
+
+	// Return cleanup function
+	cleanup := func() {
+		for _, m := range mappings {
+			_ = os.Remove(m.SymlinkPath)
+		}
+	}
+
+	return mappings, cleanup, nil
+}
+
+// CleanupDynamicDirSymlinks removes all symlinks created for bracket directories.
+func CleanupDynamicDirSymlinks(appDir string) error {
+	return filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Ignore errors, best effort cleanup
+		}
+
+		// Check if it's a symlink
+		if info.Mode()&os.ModeSymlink == 0 {
+			return nil
+		}
+
+		// Check if the name matches our sanitization pattern
+		name := info.Name()
+		if strings.HasPrefix(name, "_") && !strings.HasPrefix(name, "_components") && !strings.HasPrefix(name, "_utils") {
+			// Check if target is a bracket directory
+			target, err := os.Readlink(path)
+			if err == nil && strings.Contains(target, "[") {
+				_ = os.Remove(path)
+			}
+		}
+
+		return nil
+	})
+}
+
+// sanitizeDirName converts a bracket directory name to a valid Go identifier.
+// e.g., "[slug]" -> "_slug"
+// e.g., "[...path]" -> "_catchall_path"
+// e.g., "[[...slug]]" -> "_opt_catchall_slug"
+func sanitizeDirName(name string) string {
+	// Handle [[...param]] -> _opt_catchall_param
+	if matches := optionalCatchAllRe.FindStringSubmatch(name); len(matches) > 1 {
+		return "_opt_catchall_" + matches[1]
+	}
+
+	// Handle [...param] -> _catchall_param
+	if matches := catchAllSegmentRe.FindStringSubmatch(name); len(matches) > 1 {
+		return "_catchall_" + matches[1]
+	}
+
+	// Handle [param] -> _param
+	if matches := dynamicSegmentRe.FindStringSubmatch(name); len(matches) > 1 {
+		return "_" + matches[1]
+	}
+
+	return name
 }

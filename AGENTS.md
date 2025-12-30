@@ -473,7 +473,7 @@ app/
         └── page.templ   # /users/:id (dynamic)
 ```
 
-**page.templ example:**
+**page.templ example (static page):**
 ```go
 package dashboard
 
@@ -484,6 +484,26 @@ templ Page() {
 	</div>
 }
 ```
+
+**page.templ example (dynamic page with URL parameters):**
+```go
+// app/posts/[slug]/page.templ
+package slug
+
+templ Page(slug string) {
+	<article class="p-4">
+		<h1 class="text-2xl font-bold">Post: { slug }</h1>
+		<div hx-get={ "/api/posts/" + slug } hx-trigger="load">
+			Loading...
+		</div>
+	</article>
+}
+```
+
+**Dynamic Page Parameter Matching:**
+- Parameter names in `Page()` should match bracket directory names
+- Example: `app/posts/[slug]/page.templ` → `templ Page(slug string)`
+- Mismatched names generate warnings but the page still renders
 
 ### Layout Files
 
