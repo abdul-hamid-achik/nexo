@@ -1,0 +1,365 @@
+---
+title: Forms
+description: 'Handle form submissions with validation and file uploads.'
+---
+
+Learn how to handle HTML forms in Fuego, including validation, HTMX integration, and file uploads.
+
+## Basic Form Handling
+
+### HTML Form
+
+```html
+<form method="POST" action="/api/users">
+    <input type="text" name="name" required/>
+    <input type="email" name="email" required/>
+    <button type="submit">Submit</button>
+</form>
+```
+
+### Handler
+
+```go
+func Post(c *fuego.Context) error {
+    name := c.FormValue("name")
+    email := c.FormValue("email")
+    
+    if name == "" || email == "" {
+        return fuego.BadRequest("name and email are required")
+    }
+    
+    // Create user...
+    
+    return c.Redirect(302, "/users")
+}
+```
+
+## HTMX Forms
+
+For a better UX, use HTMX to submit forms without page reload:
+
+```html
+<form 
+    hx-post="/api/users" 
+    hx-target="#result"
+    hx-swap="innerHTML"
+>
+    <input type="text" name="name" required/>
+    <input type="email" name="email" required/>
+    <button type="submit">Submit</button>
+</form>
+<div id="result"></div>
+```
+
+### Handler with HTML Response
+
+```go
+func Post(c *fuego.Context) error {
+    name := c.FormValue("name")
+    email := c.FormValue("email")
+    
+    if name == "" {
+        return c.HTML(400, `<p class="text-red-500">Name is required</p>`)
+    }
+    
+    if email == "" {
+        return c.HTML(400, `<p class="text-red-500">Email is required</p>`)
+    }
+    
+    // Create user...
+    
+    return c.HTML(200, `<p class="text-green-500">User created!</p>`)
+}
+```
+
+## Form with Reset
+
+Reset the form after successful submission:
+
+```html
+<form 
+    hx-post="/api/tasks" 
+    hx-target="#task-list"
+    hx-on::after-request="if(event.detail.successful) this.reset()"
+>
+    <input type="text" name="title" required/>
+    <button type="submit">Add Task</button>
+</form>
+```
+
+## Validation Patterns
+
+### Server-Side Validation
+
+```go
+type CreateUserInput struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+    Age   int    `json:"age"`
+}
+
+func Post(c *fuego.Context) error {
+    var input CreateUserInput
+    
+    // For JSON body
+    if c.IsJSON() {
+        if err := c.Bind(&input); err != nil {
+            return fuego.BadRequest("invalid JSON")
+        }
+    } else {
+        // For form data
+        input.Name = c.FormValue("name")
+        input.Email = c.FormValue("email")
+        input.Age, _ = strconv.Atoi(c.FormValue("age"))
+    }
+    
+    // Validate
+    if input.Name == "" {
+        return c.HTML(400, `<p class="error">Name is required</p>`)
+    }
+    if !isValidEmail(input.Email) {
+        return c.HTML(400, `<p class="error">Invalid email</p>`)
+    }
+    if input.Age < 0 || input.Age > 150 {
+        return c.HTML(400, `<p class="error">Invalid age</p>`)
+    }
+    
+    // Create user...
+    return c.HTML(200, `<p class="success">User created!</p>`)
+}
+```
+
+### Inline Validation with HTMX
+
+Validate individual fields as the user types:
+
+```html
+<input 
+    type="email" 
+    name="email"
+    hx-post="/api/validate/email"
+    hx-trigger="change"
+    hx-target="#email-error"
+/>
+<span id="email-error"></span>
+```
+
+```go
+// app/api/validate/email/route.go
+func Post(c *fuego.Context) error {
+    email := c.FormValue("email")
+    if !isValidEmail(email) {
+        return c.HTML(200, `<span class="text-red-500">Invalid email</span>`)
+    }
+    return c.HTML(200, `<span class="text-green-500">Valid!</span>`)
+}
+```
+
+## File Uploads
+
+### Single File
+
+```html
+<form method="POST" action="/api/upload" enctype="multipart/form-data">
+    <input type="file" name="avatar" accept="image/*"/>
+    <button type="submit">Upload</button>
+</form>
+```
+
+```go
+func Post(c *fuego.Context) error {
+    file, header, err := c.FormFile("avatar")
+    if err != nil {
+        return fuego.BadRequest("file required")
+    }
+    defer file.Close()
+    
+    // Validate file type
+    contentType := header.Header.Get("Content-Type")
+    if !strings.HasPrefix(contentType, "image/") {
+        return fuego.BadRequest("only images allowed")
+    }
+    
+    // Validate file size (e.g., 5MB max)
+    if header.Size > 5*1024*1024 {
+        return fuego.BadRequest("file too large (max 5MB)")
+    }
+    
+    // Save file
+    dst, err := os.Create("uploads/" + header.Filename)
+    if err != nil {
+        return fuego.InternalServerError("could not save file")
+    }
+    defer dst.Close()
+    
+    io.Copy(dst, file)
+    
+    return c.JSON(200, map[string]string{
+        "filename": header.Filename,
+        "size":     fmt.Sprint(header.Size),
+    })
+}
+```
+
+### Multiple Files
+
+```html
+<form method="POST" action="/api/upload" enctype="multipart/form-data">
+    <input type="file" name="files" multiple/>
+    <button type="submit">Upload</button>
+</form>
+```
+
+```go
+func Post(c *fuego.Context) error {
+    form, err := c.MultipartForm()
+    if err != nil {
+        return fuego.BadRequest("invalid form")
+    }
+    
+    files := form.File["files"]
+    
+    for _, fileHeader := range files {
+        file, err := fileHeader.Open()
+        if err != nil {
+            continue
+        }
+        defer file.Close()
+        
+        // Process each file...
+    }
+    
+    return c.JSON(200, map[string]int{"uploaded": len(files)})
+}
+```
+
+## HTMX File Upload with Progress
+
+```html
+<form 
+    hx-post="/api/upload" 
+    hx-encoding="multipart/form-data"
+    hx-target="#result"
+>
+    <input type="file" name="file"/>
+    <button type="submit">Upload</button>
+    <progress id="progress" value="0" max="100"></progress>
+</form>
+<div id="result"></div>
+
+<script>
+htmx.on('#upload-form', 'htmx:xhr:progress', function(evt) {
+    htmx.find('#progress').value = evt.detail.loaded/evt.detail.total * 100;
+});
+</script>
+```
+
+## Form with Templ
+
+### Form Component
+
+```go
+// components/form.templ
+package components
+
+templ Input(name, label, inputType, placeholder string) {
+    <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+            { label }
+        </label>
+        <input 
+            type={ inputType }
+            name={ name }
+            placeholder={ placeholder }
+            class="w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500"
+        />
+    </div>
+}
+
+templ Button(text string) {
+    <button 
+        type="submit"
+        class="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700"
+    >
+        { text }
+    </button>
+}
+```
+
+### Using the Component
+
+```go
+// app/register/page.templ
+package register
+
+import "myapp/components"
+
+templ Page() {
+    <div class="max-w-md mx-auto p-6">
+        <h1 class="text-2xl font-bold mb-6">Register</h1>
+        
+        <form hx-post="/api/register" hx-target="#result">
+            @components.Input("name", "Full Name", "text", "John Doe")
+            @components.Input("email", "Email", "email", "john@example.com")
+            @components.Input("password", "Password", "password", "")
+            @components.Button("Create Account")
+        </form>
+        
+        <div id="result" class="mt-4"></div>
+    </div>
+}
+```
+
+## Error Display Pattern
+
+```go
+func Post(c *fuego.Context) error {
+    name := c.FormValue("name")
+    email := c.FormValue("email")
+    
+    errors := make(map[string]string)
+    
+    if name == "" {
+        errors["name"] = "Name is required"
+    }
+    if email == "" {
+        errors["email"] = "Email is required"
+    } else if !isValidEmail(email) {
+        errors["email"] = "Invalid email format"
+    }
+    
+    if len(errors) > 0 {
+        return c.HTML(400, renderErrors(errors))
+    }
+    
+    // Success...
+    return c.HTML(200, `<p class="text-green-500">Success!</p>`)
+}
+
+func renderErrors(errors map[string]string) string {
+    html := `<div class="bg-red-50 border border-red-200 rounded p-4">`
+    html += `<ul class="list-disc list-inside text-red-700">`
+    for field, msg := range errors {
+        html += fmt.Sprintf(`<li><strong>%s:</strong> %s</li>`, field, msg)
+    }
+    html += `</ul></div>`
+    return html
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="HTMX Integration" icon="bolt" href="/docs/frontend/htmx">
+    More HTMX patterns
+  </Card>
+  <Card title="Context API" icon="code" href="/docs/api/context">
+    Request handling reference
+  </Card>
+  <Card title="Templates" icon="file-code" href="/docs/core-concepts/templates">
+    Build form UIs
+  </Card>
+  <Card title="Examples" icon="code" href="/docs/guides/examples">
+    Working examples
+  </Card>
+</CardGroup>

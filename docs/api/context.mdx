@@ -1,0 +1,460 @@
+---
+title: Context API
+description: 'Complete reference for the fuego.Context object passed to every handler.'
+---
+
+The `fuego.Context` is passed to every handler and provides access to request data and response methods.
+
+## Request Data
+
+### URL Parameters
+
+Access dynamic route parameters:
+
+```go
+// Route: /api/users/[id]/route.go → /api/users/:id
+func Get(c *fuego.Context) error {
+    id := c.Param("id")           // "123" (string)
+    idInt := c.ParamInt("id")     // 123 (int, 0 if invalid)
+    return c.JSON(200, map[string]any{"id": id})
+}
+```
+
+### Query Parameters
+
+Access URL query string values:
+
+```go
+// URL: /api/users?page=2&limit=10&active=true
+func Get(c *fuego.Context) error {
+    page := c.Query("page")                      // "2" (string)
+    limit := c.QueryDefault("limit", "20")       // "10" or "20" if missing
+    pageNum := c.QueryInt("page", 1)             // 2 (int with default)
+    active := c.QueryBool("active", false)       // true (bool with default)
+    return c.JSON(200, map[string]any{
+        "page":  pageNum,
+        "limit": limit,
+    })
+}
+```
+
+### Headers
+
+Read request headers:
+
+```go
+func Get(c *fuego.Context) error {
+    auth := c.Header("Authorization")
+    contentType := c.Header("Content-Type")
+    userAgent := c.Header("User-Agent")
+    return c.JSON(200, map[string]string{"auth": auth})
+}
+```
+
+### Request Body
+
+Parse JSON request body:
+
+```go
+type CreateUserRequest struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+func Post(c *fuego.Context) error {
+    var req CreateUserRequest
+    if err := c.Bind(&req); err != nil {
+        return fuego.BadRequest("invalid JSON body")
+    }
+    return c.JSON(201, req)
+}
+```
+
+### Form Data
+
+Access form-encoded data:
+
+```go
+func Post(c *fuego.Context) error {
+    name := c.FormValue("name")
+    email := c.FormValue("email")
+    return c.JSON(200, map[string]string{
+        "name":  name,
+        "email": email,
+    })
+}
+```
+
+### File Upload
+
+Handle file uploads:
+
+```go
+func Post(c *fuego.Context) error {
+    file, header, err := c.FormFile("avatar")
+    if err != nil {
+        return fuego.BadRequest("file required")
+    }
+    defer file.Close()
+
+    // header.Filename - original filename
+    // header.Size - file size in bytes
+    // header.Header - MIME headers
+
+    return c.JSON(200, map[string]any{
+        "filename": header.Filename,
+        "size":     header.Size,
+    })
+}
+```
+
+### Cookies
+
+Read cookies:
+
+```go
+func Get(c *fuego.Context) error {
+    sessionID := c.Cookie("session_id")
+    if sessionID == "" {
+        return fuego.Unauthorized("no session")
+    }
+    return c.JSON(200, map[string]string{"session": sessionID})
+}
+```
+
+### Request Info
+
+Access request metadata:
+
+```go
+func Get(c *fuego.Context) error {
+    method := c.Method()       // "GET", "POST", etc.
+    path := c.Path()           // "/api/users/123"
+    ip := c.ClientIP()         // client IP address
+    isJSON := c.IsJSON()       // Content-Type is application/json?
+    isHTMX := c.IsHTMX()       // HX-Request header present?
+
+    return c.JSON(200, map[string]any{
+        "method": method,
+        "path":   path,
+        "ip":     ip,
+    })
+}
+```
+
+## Response Methods
+
+### JSON
+
+Return JSON response:
+
+```go
+func Get(c *fuego.Context) error {
+    return c.JSON(200, map[string]string{"status": "ok"})
+}
+
+func Post(c *fuego.Context) error {
+    user := User{ID: 1, Name: "Alice"}
+    return c.JSON(201, user)
+}
+```
+
+### HTML
+
+Return HTML response:
+
+```go
+func Get(c *fuego.Context) error {
+    return c.HTML(200, "<h1>Hello, World!</h1>")
+}
+```
+
+### Plain Text
+
+Return plain text:
+
+```go
+func Get(c *fuego.Context) error {
+    return c.String(200, "Hello, World!")
+}
+```
+
+### Redirect
+
+Redirect to another URL:
+
+```go
+func Get(c *fuego.Context) error {
+    return c.Redirect(302, "/login")        // Temporary
+    // return c.Redirect(301, "/new-page")  // Permanent
+}
+```
+
+### No Content
+
+Return 204 No Content:
+
+```go
+func Delete(c *fuego.Context) error {
+    // Delete the resource...
+    return c.NoContent()
+}
+```
+
+### Binary Data
+
+Return binary data:
+
+```go
+func Get(c *fuego.Context) error {
+    pdfBytes := generatePDF()
+    return c.Blob(200, "application/pdf", pdfBytes)
+}
+```
+
+### Response Headers
+
+Set response headers:
+
+```go
+func Get(c *fuego.Context) error {
+    c.SetHeader("X-Custom-Header", "value")
+    c.SetHeader("Cache-Control", "max-age=3600")
+    return c.JSON(200, data)
+}
+```
+
+### Set Cookies
+
+Set cookies:
+
+```go
+import "net/http"
+
+func Post(c *fuego.Context) error {
+    c.SetCookie(&http.Cookie{
+        Name:     "session_id",
+        Value:    "abc123",
+        Path:     "/",
+        MaxAge:   3600,
+        HttpOnly: true,
+        Secure:   true,
+        SameSite: http.SameSiteLaxMode,
+    })
+    return c.JSON(200, map[string]string{"status": "logged in"})
+}
+```
+
+## Context Storage
+
+Share data between middleware and handlers:
+
+### Set Value
+
+```go
+// In middleware
+func Middleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            user := authenticateUser(c)
+            c.Set("user", user)
+            c.Set("user_id", user.ID)
+            c.Set("is_admin", user.Role == "admin")
+            return next(c)
+        }
+    }
+}
+```
+
+### Get Value
+
+```go
+// In handler
+func Get(c *fuego.Context) error {
+    user := c.Get("user").(User)           // Type assertion needed
+    userID := c.GetString("user_id")       // Returns string
+    userIDInt := c.GetInt("user_id")       // Returns int
+    isAdmin := c.GetBool("is_admin")       // Returns bool
+
+    return c.JSON(200, user)
+}
+```
+
+## Error Helpers
+
+Return common HTTP errors:
+
+```go
+func Get(c *fuego.Context) error {
+    // 400 Bad Request
+    return fuego.BadRequest("invalid input")
+
+    // 401 Unauthorized
+    return fuego.Unauthorized("login required")
+
+    // 403 Forbidden
+    return fuego.Forbidden("access denied")
+
+    // 404 Not Found
+    return fuego.NotFound("user not found")
+
+    // 500 Internal Server Error
+    return fuego.InternalServerError("something went wrong")
+}
+```
+
+These return structured JSON errors:
+
+```json
+{
+    "error": "not_found",
+    "message": "user not found"
+}
+```
+
+## HTMX Support
+
+Detect and respond to HTMX requests:
+
+```go
+func Get(c *fuego.Context) error {
+    if c.IsHTMX() {
+        // Return partial HTML for HTMX
+        return c.HTML(200, "<li>New item</li>")
+    }
+    // Return full page or JSON for regular requests
+    return c.JSON(200, items)
+}
+```
+
+## Complete API Reference
+
+### Request Methods
+
+| Method | Description |
+|--------|-------------|
+| `c.Param(name)` | Get URL parameter |
+| `c.ParamInt(name)` | Get URL parameter as int |
+| `c.Query(name)` | Get query string value |
+| `c.QueryDefault(name, def)` | Get query with default |
+| `c.QueryInt(name, def)` | Get query as int |
+| `c.QueryBool(name, def)` | Get query as bool |
+| `c.Header(name)` | Get request header |
+| `c.Bind(&struct)` | Parse JSON body |
+| `c.FormValue(name)` | Get form value |
+| `c.FormFile(name)` | Get uploaded file |
+| `c.Cookie(name)` | Get cookie value |
+| `c.Method()` | Get HTTP method |
+| `c.Path()` | Get request path |
+| `c.ClientIP()` | Get client IP |
+| `c.IsJSON()` | Check if JSON request |
+| `c.IsHTMX()` | Check if HTMX request |
+
+### Response Methods
+
+| Method | Description |
+|--------|-------------|
+| `c.JSON(status, data)` | Return JSON |
+| `c.HTML(status, html)` | Return HTML |
+| `c.String(status, text)` | Return plain text |
+| `c.Redirect(status, url)` | Redirect |
+| `c.NoContent()` | Return 204 |
+| `c.Blob(status, type, data)` | Return binary |
+| `c.SetHeader(key, value)` | Set response header |
+| `c.SetCookie(cookie)` | Set cookie |
+
+### Context Storage
+
+| Method | Description |
+|--------|-------------|
+| `c.Set(key, value)` | Store value |
+| `c.Get(key)` | Get value (any) |
+| `c.GetString(key)` | Get as string |
+| `c.GetInt(key)` | Get as int |
+| `c.GetBool(key)` | Get as bool |
+
+## Full Example
+
+```go
+package users
+
+import (
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+type User struct {
+    ID    int    `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+// GET /api/users - List users
+func Get(c *fuego.Context) error {
+    page := c.QueryInt("page", 1)
+    limit := c.QueryInt("limit", 10)
+
+    users := fetchUsers(page, limit)
+    return c.JSON(200, users)
+}
+
+// POST /api/users - Create user
+func Post(c *fuego.Context) error {
+    var user User
+    if err := c.Bind(&user); err != nil {
+        return fuego.BadRequest("invalid request body")
+    }
+
+    if user.Name == "" {
+        return fuego.BadRequest("name is required")
+    }
+
+    created := createUser(user)
+    return c.JSON(201, created)
+}
+
+// GET /api/users/:id - Get user by ID
+func GetByID(c *fuego.Context) error {
+    id := c.ParamInt("id")
+    if id == 0 {
+        return fuego.BadRequest("invalid user ID")
+    }
+
+    user, err := findUser(id)
+    if err != nil {
+        return fuego.NotFound("user not found")
+    }
+
+    return c.JSON(200, user)
+}
+
+// DELETE /api/users/:id - Delete user
+func Delete(c *fuego.Context) error {
+    id := c.ParamInt("id")
+    
+    // Check if current user can delete
+    currentUserID := c.GetInt("user_id")
+    if currentUserID != id && !c.GetBool("is_admin") {
+        return fuego.Forbidden("cannot delete other users")
+    }
+
+    deleteUser(id)
+    return c.NoContent()
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Middleware" icon="layer-group" href="/docs/middleware/overview">
+    Processing requests
+  </Card>
+  <Card title="File-based Routing" icon="folder-tree" href="/docs/routing/file-based">
+    Route patterns
+  </Card>
+  <Card title="Proxy" icon="shield" href="/docs/middleware/proxy">
+    Request interception
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/docs/advanced/error-handling">
+    Handling errors
+  </Card>
+</CardGroup>

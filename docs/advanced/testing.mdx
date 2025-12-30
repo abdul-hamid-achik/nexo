@@ -1,0 +1,687 @@
+---
+title: Testing
+description: 'Write comprehensive tests for your Fuego applications with built-in testing utilities.'
+---
+
+Fuego applications are easy to test using Go's standard `testing` package and `net/http/httptest`. This guide covers testing patterns for handlers, middleware, and full integration tests.
+
+## Testing Setup
+
+Fuego provides utilities that work seamlessly with Go's testing infrastructure:
+
+```go
+import (
+    "net/http/httptest"
+    "testing"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+```
+
+## Testing Handlers
+
+### Basic Handler Test
+
+```go
+func TestGetUsers(t *testing.T) {
+    // Create app instance
+    app := fuego.New()
+    
+    // Register the handler
+    app.Get("/api/users", func(c *fuego.Context) error {
+        return c.JSON(200, map[string]any{
+            "users": []string{"alice", "bob"},
+        })
+    })
+    
+    // Mount routes
+    app.Mount()
+    
+    // Create test request
+    w := httptest.NewRecorder()
+    r := httptest.NewRequest("GET", "/api/users", nil)
+    
+    // Execute request
+    app.ServeHTTP(w, r)
+    
+    // Assert response
+    if w.Code != 200 {
+        t.Errorf("expected status 200, got %d", w.Code)
+    }
+    
+    // Check content type
+    contentType := w.Header().Get("Content-Type")
+    if contentType != "application/json; charset=utf-8" {
+        t.Errorf("expected JSON content type, got %s", contentType)
+    }
+}
+```
+
+### Testing with JSON Body
+
+```go
+func TestCreateUser(t *testing.T) {
+    app := fuego.New()
+    
+    app.Post("/api/users", func(c *fuego.Context) error {
+        var input struct {
+            Name  string `json:"name"`
+            Email string `json:"email"`
+        }
+        if err := c.Bind(&input); err != nil {
+            return fuego.BadRequest("invalid JSON")
+        }
+        return c.JSON(201, map[string]any{
+            "id":    "user-123",
+            "name":  input.Name,
+            "email": input.Email,
+        })
+    })
+    
+    app.Mount()
+    
+    // Create request with JSON body
+    body := strings.NewReader(`{"name":"Alice","email":"alice@example.com"}`)
+    w := httptest.NewRecorder()
+    r := httptest.NewRequest("POST", "/api/users", body)
+    r.Header.Set("Content-Type", "application/json")
+    
+    app.ServeHTTP(w, r)
+    
+    if w.Code != 201 {
+        t.Errorf("expected 201, got %d", w.Code)
+    }
+    
+    // Parse and verify response
+    var response map[string]any
+    if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+        t.Fatalf("failed to parse response: %v", err)
+    }
+    
+    if response["name"] != "Alice" {
+        t.Errorf("expected name Alice, got %v", response["name"])
+    }
+}
+```
+
+### Testing URL Parameters
+
+```go
+func TestGetUserByID(t *testing.T) {
+    app := fuego.New()
+    
+    app.Get("/api/users/{id}", func(c *fuego.Context) error {
+        id := c.Param("id")
+        return c.JSON(200, map[string]string{"id": id})
+    })
+    
+    app.Mount()
+    
+    w := httptest.NewRecorder()
+    r := httptest.NewRequest("GET", "/api/users/user-456", nil)
+    
+    app.ServeHTTP(w, r)
+    
+    if w.Code != 200 {
+        t.Errorf("expected 200, got %d", w.Code)
+    }
+    
+    var response map[string]string
+    json.Unmarshal(w.Body.Bytes(), &response)
+    
+    if response["id"] != "user-456" {
+        t.Errorf("expected id user-456, got %s", response["id"])
+    }
+}
+```
+
+### Testing Query Parameters
+
+```go
+func TestListUsersWithPagination(t *testing.T) {
+    app := fuego.New()
+    
+    app.Get("/api/users", func(c *fuego.Context) error {
+        page := c.QueryInt("page", 1)
+        limit := c.QueryInt("limit", 10)
+        return c.JSON(200, map[string]int{
+            "page":  page,
+            "limit": limit,
+        })
+    })
+    
+    app.Mount()
+    
+    w := httptest.NewRecorder()
+    r := httptest.NewRequest("GET", "/api/users?page=2&limit=25", nil)
+    
+    app.ServeHTTP(w, r)
+    
+    var response map[string]int
+    json.Unmarshal(w.Body.Bytes(), &response)
+    
+    if response["page"] != 2 {
+        t.Errorf("expected page 2, got %d", response["page"])
+    }
+    if response["limit"] != 25 {
+        t.Errorf("expected limit 25, got %d", response["limit"])
+    }
+}
+```
+
+## Table-Driven Tests
+
+Use table-driven tests for comprehensive coverage:
+
+```go
+func TestUserEndpoints(t *testing.T) {
+    app := fuego.New()
+    
+    app.Get("/api/users", func(c *fuego.Context) error {
+        return c.JSON(200, map[string]string{"action": "list"})
+    })
+    app.Post("/api/users", func(c *fuego.Context) error {
+        return c.JSON(201, map[string]string{"action": "create"})
+    })
+    app.Put("/api/users/{id}", func(c *fuego.Context) error {
+        return c.JSON(200, map[string]string{"action": "update"})
+    })
+    app.Delete("/api/users/{id}", func(c *fuego.Context) error {
+        return c.NoContent()
+    })
+    
+    app.Mount()
+    
+    tests := []struct {
+        name       string
+        method     string
+        path       string
+        body       string
+        wantStatus int
+    }{
+        {"list users", "GET", "/api/users", "", 200},
+        {"create user", "POST", "/api/users", `{"name":"test"}`, 201},
+        {"update user", "PUT", "/api/users/123", `{"name":"updated"}`, 200},
+        {"delete user", "DELETE", "/api/users/123", "", 204},
+        {"not found", "GET", "/api/nonexistent", "", 404},
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            var body io.Reader
+            if tt.body != "" {
+                body = strings.NewReader(tt.body)
+            }
+            
+            w := httptest.NewRecorder()
+            r := httptest.NewRequest(tt.method, tt.path, body)
+            if tt.body != "" {
+                r.Header.Set("Content-Type", "application/json")
+            }
+            
+            app.ServeHTTP(w, r)
+            
+            if w.Code != tt.wantStatus {
+                t.Errorf("expected status %d, got %d", tt.wantStatus, w.Code)
+            }
+        })
+    }
+}
+```
+
+## Testing Middleware
+
+### Testing Custom Middleware
+
+```go
+func TestAuthMiddleware(t *testing.T) {
+    authMiddleware := func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            token := c.Header("Authorization")
+            if token == "" {
+                return fuego.Unauthorized("missing token")
+            }
+            if token != "Bearer valid-token" {
+                return fuego.Forbidden("invalid token")
+            }
+            c.Set("user_id", "user-123")
+            return next(c)
+        }
+    }
+    
+    tests := []struct {
+        name       string
+        token      string
+        wantStatus int
+    }{
+        {"no token", "", 401},
+        {"invalid token", "Bearer invalid", 403},
+        {"valid token", "Bearer valid-token", 200},
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            app := fuego.New()
+            app.Use(authMiddleware)
+            app.Get("/api/protected", func(c *fuego.Context) error {
+                userID := c.GetString("user_id")
+                return c.JSON(200, map[string]string{"user_id": userID})
+            })
+            app.Mount()
+            
+            w := httptest.NewRecorder()
+            r := httptest.NewRequest("GET", "/api/protected", nil)
+            if tt.token != "" {
+                r.Header.Set("Authorization", tt.token)
+            }
+            
+            app.ServeHTTP(w, r)
+            
+            if w.Code != tt.wantStatus {
+                t.Errorf("expected %d, got %d", tt.wantStatus, w.Code)
+            }
+        })
+    }
+}
+```
+
+### Testing Middleware Order
+
+```go
+func TestMiddlewareOrder(t *testing.T) {
+    var order []string
+    
+    mw1 := func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            order = append(order, "mw1-before")
+            err := next(c)
+            order = append(order, "mw1-after")
+            return err
+        }
+    }
+    
+    mw2 := func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            order = append(order, "mw2-before")
+            err := next(c)
+            order = append(order, "mw2-after")
+            return err
+        }
+    }
+    
+    app := fuego.New()
+    app.Use(mw1)
+    app.Use(mw2)
+    app.Get("/test", func(c *fuego.Context) error {
+        order = append(order, "handler")
+        return c.String(200, "ok")
+    })
+    app.Mount()
+    
+    w := httptest.NewRecorder()
+    r := httptest.NewRequest("GET", "/test", nil)
+    app.ServeHTTP(w, r)
+    
+    expected := []string{
+        "mw1-before",
+        "mw2-before",
+        "handler",
+        "mw2-after",
+        "mw1-after",
+    }
+    
+    if !reflect.DeepEqual(order, expected) {
+        t.Errorf("expected order %v, got %v", expected, order)
+    }
+}
+```
+
+## Testing Error Handling
+
+```go
+func TestErrorResponses(t *testing.T) {
+    app := fuego.New()
+    
+    app.Get("/api/bad-request", func(c *fuego.Context) error {
+        return fuego.BadRequest("invalid input")
+    })
+    
+    app.Get("/api/not-found", func(c *fuego.Context) error {
+        return fuego.NotFound("resource not found")
+    })
+    
+    app.Get("/api/panic", func(c *fuego.Context) error {
+        panic("something went wrong")
+    })
+    
+    app.Use(fuego.Recover()) // Add recover middleware
+    app.Mount()
+    
+    tests := []struct {
+        path       string
+        wantStatus int
+        wantMsg    string
+    }{
+        {"/api/bad-request", 400, "invalid input"},
+        {"/api/not-found", 404, "resource not found"},
+        {"/api/panic", 500, ""}, // Recover middleware handles this
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.path, func(t *testing.T) {
+            w := httptest.NewRecorder()
+            r := httptest.NewRequest("GET", tt.path, nil)
+            
+            app.ServeHTTP(w, r)
+            
+            if w.Code != tt.wantStatus {
+                t.Errorf("expected %d, got %d", tt.wantStatus, w.Code)
+            }
+        })
+    }
+}
+```
+
+## Integration Testing
+
+### Testing with Real Database
+
+```go
+func TestUserCRUD_Integration(t *testing.T) {
+    if testing.Short() {
+        t.Skip("skipping integration test")
+    }
+    
+    // Setup test database
+    db := setupTestDB(t)
+    defer cleanupTestDB(t, db)
+    
+    app := fuego.New()
+    userStore := NewUserStore(db)
+    
+    app.Get("/api/users/{id}", func(c *fuego.Context) error {
+        user, err := userStore.Find(c.Param("id"))
+        if err != nil {
+            return fuego.NotFound("user not found")
+        }
+        return c.JSON(200, user)
+    })
+    
+    app.Post("/api/users", func(c *fuego.Context) error {
+        var input CreateUserInput
+        if err := c.Bind(&input); err != nil {
+            return fuego.BadRequest("invalid input")
+        }
+        user, err := userStore.Create(input)
+        if err != nil {
+            return fuego.InternalServerError("failed to create user")
+        }
+        return c.JSON(201, user)
+    })
+    
+    app.Mount()
+    
+    // Test create
+    createBody := strings.NewReader(`{"name":"Test User","email":"test@example.com"}`)
+    w := httptest.NewRecorder()
+    r := httptest.NewRequest("POST", "/api/users", createBody)
+    r.Header.Set("Content-Type", "application/json")
+    app.ServeHTTP(w, r)
+    
+    if w.Code != 201 {
+        t.Fatalf("create failed: %d - %s", w.Code, w.Body.String())
+    }
+    
+    var created map[string]any
+    json.Unmarshal(w.Body.Bytes(), &created)
+    userID := created["id"].(string)
+    
+    // Test read
+    w = httptest.NewRecorder()
+    r = httptest.NewRequest("GET", "/api/users/"+userID, nil)
+    app.ServeHTTP(w, r)
+    
+    if w.Code != 200 {
+        t.Errorf("read failed: expected 200, got %d", w.Code)
+    }
+}
+```
+
+### Test Helper Functions
+
+Create reusable test helpers:
+
+```go
+// testutil/helpers.go
+package testutil
+
+import (
+    "encoding/json"
+    "io"
+    "net/http/httptest"
+    "strings"
+    "testing"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// TestApp wraps fuego.App with testing utilities
+type TestApp struct {
+    *fuego.App
+    t *testing.T
+}
+
+func NewTestApp(t *testing.T) *TestApp {
+    return &TestApp{
+        App: fuego.New(),
+        t:   t,
+    }
+}
+
+func (a *TestApp) Request(method, path string, body io.Reader) *httptest.ResponseRecorder {
+    a.Mount()
+    w := httptest.NewRecorder()
+    r := httptest.NewRequest(method, path, body)
+    if body != nil {
+        r.Header.Set("Content-Type", "application/json")
+    }
+    a.ServeHTTP(w, r)
+    return w
+}
+
+func (a *TestApp) GET(path string) *httptest.ResponseRecorder {
+    return a.Request("GET", path, nil)
+}
+
+func (a *TestApp) POST(path string, body any) *httptest.ResponseRecorder {
+    jsonBody, _ := json.Marshal(body)
+    return a.Request("POST", path, strings.NewReader(string(jsonBody)))
+}
+
+func (a *TestApp) AssertStatus(w *httptest.ResponseRecorder, want int) {
+    if w.Code != want {
+        a.t.Errorf("expected status %d, got %d: %s", want, w.Code, w.Body.String())
+    }
+}
+
+func (a *TestApp) AssertJSON(w *httptest.ResponseRecorder, key string, want any) {
+    var response map[string]any
+    if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+        a.t.Fatalf("failed to parse JSON: %v", err)
+    }
+    if response[key] != want {
+        a.t.Errorf("expected %s=%v, got %v", key, want, response[key])
+    }
+}
+```
+
+Usage:
+
+```go
+func TestWithHelpers(t *testing.T) {
+    app := testutil.NewTestApp(t)
+    
+    app.Get("/api/users", func(c *fuego.Context) error {
+        return c.JSON(200, map[string]string{"status": "ok"})
+    })
+    
+    w := app.GET("/api/users")
+    app.AssertStatus(w, 200)
+    app.AssertJSON(w, "status", "ok")
+}
+```
+
+## Testing HTMX Handlers
+
+```go
+func TestHTMXHandler(t *testing.T) {
+    app := fuego.New()
+    
+    app.Get("/api/items", func(c *fuego.Context) error {
+        if c.IsHTMX() {
+            // Return HTML fragment for HTMX
+            return c.HTML(200, "<li>New Item</li>")
+        }
+        // Return JSON for regular requests
+        return c.JSON(200, map[string]any{"items": []string{"item1"}})
+    })
+    
+    app.Mount()
+    
+    // Test regular request
+    w := httptest.NewRecorder()
+    r := httptest.NewRequest("GET", "/api/items", nil)
+    app.ServeHTTP(w, r)
+    
+    if w.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+        t.Error("expected JSON response for regular request")
+    }
+    
+    // Test HTMX request
+    w = httptest.NewRecorder()
+    r = httptest.NewRequest("GET", "/api/items", nil)
+    r.Header.Set("HX-Request", "true")
+    app.ServeHTTP(w, r)
+    
+    if w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+        t.Error("expected HTML response for HTMX request")
+    }
+    if !strings.Contains(w.Body.String(), "<li>") {
+        t.Error("expected HTML fragment in response")
+    }
+}
+```
+
+## Testing File-Based Routes
+
+```go
+func TestFileBasedRoutes(t *testing.T) {
+    // Create temp directory with route files
+    tmpDir := t.TempDir()
+    appDir := filepath.Join(tmpDir, "app", "api", "health")
+    if err := os.MkdirAll(appDir, 0755); err != nil {
+        t.Fatalf("failed to create temp dir: %v", err)
+    }
+    
+    routeContent := `package health
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+func Get(c *fuego.Context) error {
+    return c.JSON(200, map[string]string{"status": "healthy"})
+}
+`
+    if err := os.WriteFile(filepath.Join(appDir, "route.go"), []byte(routeContent), 0644); err != nil {
+        t.Fatalf("failed to write route.go: %v", err)
+    }
+    
+    app := fuego.New(fuego.WithAppDir(filepath.Join(tmpDir, "app")))
+    
+    if err := app.Scan(); err != nil {
+        t.Fatalf("scan failed: %v", err)
+    }
+    
+    routes := app.RouteTree().Routes()
+    if len(routes) != 1 {
+        t.Errorf("expected 1 route, got %d", len(routes))
+    }
+}
+```
+
+## Running Tests
+
+<Tabs>
+  <Tab title="All Tests">
+```bash
+go test ./...
+```
+  </Tab>
+  <Tab title="Specific Package">
+```bash
+go test ./pkg/fuego/...
+```
+  </Tab>
+  <Tab title="With Coverage">
+```bash
+go test -cover ./...
+
+# Generate coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
+  </Tab>
+  <Tab title="Skip Integration">
+```bash
+go test -short ./...
+```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use table-driven tests">
+Table-driven tests make it easy to add new test cases and provide clear documentation of expected behavior.
+  </Accordion>
+  <Accordion title="Test error cases explicitly">
+Don't just test the happy path. Test what happens with invalid input, missing resources, and server errors.
+  </Accordion>
+  <Accordion title="Use t.Parallel() for independent tests">
+```go
+func TestIndependent(t *testing.T) {
+    t.Parallel()
+    // Test code
+}
+```
+  </Accordion>
+  <Accordion title="Clean up test resources">
+Use `t.TempDir()` for temporary files (automatically cleaned up) and `defer` for other cleanup.
+  </Accordion>
+  <Accordion title="Separate unit and integration tests">
+Use build tags or `-short` flag to separate fast unit tests from slower integration tests.
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+Run tests with the `-race` flag to detect race conditions:
+```bash
+go test -race ./...
+```
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Error Handling" icon="circle-exclamation" href="/docs/advanced/error-handling">
+    Test error scenarios effectively
+  </Card>
+  <Card title="Middleware" icon="layer-group" href="/docs/middleware/overview">
+    Learn about testable middleware patterns
+  </Card>
+  <Card title="Configuration" icon="gear" href="/docs/advanced/configuration">
+    Configure test environments
+  </Card>
+  <Card title="Performance" icon="gauge-high" href="/docs/advanced/performance">
+    Benchmark your handlers
+  </Card>
+</CardGroup>

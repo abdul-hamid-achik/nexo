@@ -2,7 +2,7 @@
   "$schema": "https://context7.com/schema/context7.json",
   "projectTitle": "Fuego",
   "description": "File-based routing for Go. Fast to write. Faster to run. Build APIs and full-stack apps with conventions that feel natural.",
-  "folders": ["docs", "examples"],
+  "folders": ["docs"],
   "excludeFolders": [
     "node_modules",
     ".git",
@@ -27,7 +27,6 @@
     "Use fuego generate commands for scaffolding new routes, middleware, pages, and proxies",
     "Always run golangci-lint before committing to avoid CI failures",
     "For deferred operations, use: defer func() { _ = file.Close() }()",
-    "Examples use replace directive in go.mod for local development",
     "Use c.JSON(status, data) for JSON responses",
     "Use c.Bind(&struct) to parse JSON request bodies",
     "Use c.Param(name) for URL parameters like [id]",
@@ -35,7 +34,17 @@
     "App-level request logger is enabled by default and captures ALL requests including proxy actions",
     "Use app.SetLogger(fuego.RequestLoggerConfig{...}) to customize logging",
     "Use FUEGO_LOG_LEVEL environment variable to control log level (debug, info, warn, error)",
-    "In production (GO_ENV=production), log level defaults to warn; in dev mode, defaults to debug"
+    "In production (GO_ENV=production), log level defaults to warn; in dev mode, defaults to debug",
+    "Use HTMX attributes (hx-get, hx-post, hx-target, hx-swap) for interactive UI without JavaScript",
+    "Check c.IsHTMX() to detect HTMX requests and return partial HTML instead of full pages",
+    "Tailwind CSS v4 is built-in via standalone binary - no Node.js required",
+    "Run 'fuego tailwind build' for production CSS, 'fuego tailwind watch' for development",
+    "Place Tailwind source in styles/input.css, output goes to static/css/output.css",
+    "Use c.FormValue(name) to get form values from HTMX or traditional form submissions",
+    "For authentication, store user info in context with c.Set() and retrieve with c.Get()",
+    "Use fuego.BadRequest(), fuego.NotFound(), fuego.Unauthorized() for semantic error responses",
+    "Static files are served from static/ directory at /static path by default",
+    "Configure static file serving in fuego.yaml with static_dir and static_path options"
   ],
   "previousVersions": [
     {

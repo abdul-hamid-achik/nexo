@@ -1,0 +1,528 @@
+---
+title: Configuration
+description: 'Complete reference for fuego.yaml configuration and environment variables.'
+---
+
+Fuego uses sensible defaults out of the box, but provides extensive configuration options through `fuego.yaml`, environment variables, and programmatic options.
+
+## Configuration Priority
+
+Configuration values are resolved in this order (highest to lowest priority):
+
+1. **Programmatic options** - `fuego.New(WithPort("8080"))`
+2. **Environment variables** - `FUEGO_PORT=8080`
+3. **fuego.yaml file** - `port: 8080`
+4. **Default values** - `3000`
+
+## fuego.yaml Reference
+
+Create `fuego.yaml` in your project root:
+
+```yaml
+# Server configuration
+port: 3000
+host: 0.0.0.0
+
+# Directory configuration
+app_dir: app
+static_dir: static
+static_path: /static
+
+# Development configuration
+dev:
+  hot_reload: true
+  watch_extensions:
+    - .go
+    - .templ
+  exclude_dirs:
+    - node_modules
+    - .git
+    - _*
+
+# Middleware configuration
+middleware:
+  logger: true
+  recover: true
+```
+
+## Configuration Options
+
+### Server Configuration
+
+<AccordionGroup>
+  <Accordion title="port" icon="plug">
+The port the server listens on.
+
+| Property | Value |
+|----------|-------|
+| Type | `string` |
+| Default | `"3000"` |
+| Env | `FUEGO_PORT` |
+
+```yaml
+port: "8080"
+```
+  </Accordion>
+  
+  <Accordion title="host" icon="server">
+The host address to bind to.
+
+| Property | Value |
+|----------|-------|
+| Type | `string` |
+| Default | `"0.0.0.0"` |
+| Env | `FUEGO_HOST` |
+
+```yaml
+host: "127.0.0.1"  # localhost only
+host: "0.0.0.0"    # all interfaces
+```
+  </Accordion>
+</AccordionGroup>
+
+### Directory Configuration
+
+<AccordionGroup>
+  <Accordion title="app_dir" icon="folder">
+The directory containing your route files.
+
+| Property | Value |
+|----------|-------|
+| Type | `string` |
+| Default | `"app"` |
+| Env | `FUEGO_APP_DIR` |
+
+```yaml
+app_dir: src/routes
+```
+  </Accordion>
+  
+  <Accordion title="static_dir" icon="folder-open">
+The directory containing static files to serve.
+
+| Property | Value |
+|----------|-------|
+| Type | `string` |
+| Default | `"static"` |
+| Env | `FUEGO_STATIC_DIR` |
+
+```yaml
+static_dir: public/assets
+```
+  </Accordion>
+  
+  <Accordion title="static_path" icon="link">
+The URL path prefix for static files.
+
+| Property | Value |
+|----------|-------|
+| Type | `string` |
+| Default | `"/static"` |
+| Env | `FUEGO_STATIC_PATH` |
+
+```yaml
+static_path: /assets
+```
+
+This means files in `static/css/style.css` would be served at `/assets/css/style.css`.
+  </Accordion>
+</AccordionGroup>
+
+### Development Configuration
+
+<AccordionGroup>
+  <Accordion title="dev.hot_reload" icon="rotate">
+Enable hot reloading during development.
+
+| Property | Value |
+|----------|-------|
+| Type | `bool` |
+| Default | `true` |
+| Env | `FUEGO_HOT_RELOAD` |
+
+```yaml
+dev:
+  hot_reload: true
+```
+  </Accordion>
+  
+  <Accordion title="dev.watch_extensions" icon="eye">
+File extensions to watch for changes.
+
+| Property | Value |
+|----------|-------|
+| Type | `[]string` |
+| Default | `[".go", ".templ"]` |
+
+```yaml
+dev:
+  watch_extensions:
+    - .go
+    - .templ
+    - .html
+    - .css
+```
+  </Accordion>
+  
+  <Accordion title="dev.exclude_dirs" icon="folder-minus">
+Directories to exclude from file watching.
+
+| Property | Value |
+|----------|-------|
+| Type | `[]string` |
+| Default | `["node_modules", ".git", "_*"]` |
+
+```yaml
+dev:
+  exclude_dirs:
+    - node_modules
+    - .git
+    - vendor
+    - _build
+```
+  </Accordion>
+</AccordionGroup>
+
+### Middleware Configuration
+
+<AccordionGroup>
+  <Accordion title="middleware.logger" icon="terminal">
+Enable the built-in request logger.
+
+| Property | Value |
+|----------|-------|
+| Type | `bool` |
+| Default | `true` |
+| Env | `FUEGO_LOGGER` |
+
+```yaml
+middleware:
+  logger: true
+```
+  </Accordion>
+  
+  <Accordion title="middleware.recover" icon="shield">
+Enable panic recovery middleware.
+
+| Property | Value |
+|----------|-------|
+| Type | `bool` |
+| Default | `true` |
+| Env | `FUEGO_RECOVER` |
+
+```yaml
+middleware:
+  recover: true
+```
+  </Accordion>
+</AccordionGroup>
+
+## Environment Variables
+
+All configuration options can be set via environment variables with the `FUEGO_` prefix:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `FUEGO_PORT` | Server port | `3000` |
+| `FUEGO_HOST` | Server host | `0.0.0.0` |
+| `FUEGO_APP_DIR` | App directory | `app` |
+| `FUEGO_STATIC_DIR` | Static files directory | `static` |
+| `FUEGO_STATIC_PATH` | Static URL path | `/static` |
+| `FUEGO_HOT_RELOAD` | Enable hot reload | `true` |
+| `FUEGO_LOGGER` | Enable request logger | `true` |
+| `FUEGO_RECOVER` | Enable panic recovery | `true` |
+| `FUEGO_LOG_LEVEL` | Log level | `info` |
+| `FUEGO_DEV` | Development mode | `false` |
+| `GO_ENV` | Environment (affects logging) | - |
+
+### Log Level Configuration
+
+Control logging verbosity with `FUEGO_LOG_LEVEL`:
+
+```bash
+# Log everything
+export FUEGO_LOG_LEVEL=debug
+
+# Log all requests (default)
+export FUEGO_LOG_LEVEL=info
+
+# Log only 4xx and 5xx
+export FUEGO_LOG_LEVEL=warn
+
+# Log only 5xx errors
+export FUEGO_LOG_LEVEL=error
+
+# Disable logging
+export FUEGO_LOG_LEVEL=off
+```
+
+<Info>
+Setting `FUEGO_DEV=true` automatically sets log level to `debug`.
+Setting `GO_ENV=production` automatically sets log level to `warn`.
+</Info>
+
+## Programmatic Configuration
+
+Configure your app in code using option functions:
+
+```go
+package main
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+func main() {
+    app := fuego.New(
+        fuego.WithPort("8080"),
+        fuego.WithHost("127.0.0.1"),
+        fuego.WithAppDir("src/routes"),
+        fuego.WithStaticDir("public"),
+        fuego.WithStaticPath("/assets"),
+    )
+    
+    app.Start()
+}
+```
+
+### Available Options
+
+```go
+// Server options
+fuego.WithPort("8080")           // Set server port
+fuego.WithHost("127.0.0.1")      // Set server host
+
+// Directory options
+fuego.WithAppDir("src/routes")   // Set app directory
+fuego.WithStaticDir("public")    // Set static files directory
+fuego.WithStaticPath("/assets")  // Set static URL path
+
+// Load from config file
+fuego.WithConfig("custom.yaml")  // Load specific config file
+```
+
+## Configuration Examples
+
+### Development Setup
+
+```yaml
+# fuego.yaml - Development
+port: 3000
+host: 127.0.0.1
+
+dev:
+  hot_reload: true
+  watch_extensions:
+    - .go
+    - .templ
+    - .css
+
+middleware:
+  logger: true
+  recover: true
+```
+
+### Production Setup
+
+```yaml
+# fuego.yaml - Production
+port: 8080
+host: 0.0.0.0
+
+dev:
+  hot_reload: false
+
+middleware:
+  logger: true
+  recover: true
+```
+
+With environment variables:
+
+```bash
+export FUEGO_PORT=8080
+export FUEGO_LOG_LEVEL=warn
+export GO_ENV=production
+```
+
+### Docker Configuration
+
+```dockerfile
+FROM golang:1.21-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN go build -o main ./cmd/myapp
+
+FROM alpine:latest
+WORKDIR /app
+COPY --from=builder /app/main .
+COPY --from=builder /app/fuego.yaml .
+COPY --from=builder /app/static ./static
+
+ENV FUEGO_PORT=8080
+ENV FUEGO_HOST=0.0.0.0
+ENV GO_ENV=production
+
+EXPOSE 8080
+CMD ["./main"]
+```
+
+### Kubernetes ConfigMap
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuego-config
+data:
+  fuego.yaml: |
+    port: 8080
+    host: 0.0.0.0
+    middleware:
+      logger: true
+      recover: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          env:
+            - name: GO_ENV
+              value: production
+            - name: FUEGO_LOG_LEVEL
+              value: warn
+          volumeMounts:
+            - name: config
+              mountPath: /app/fuego.yaml
+              subPath: fuego.yaml
+      volumes:
+        - name: config
+          configMap:
+            name: fuego-config
+```
+
+## Accessing Configuration at Runtime
+
+Access the current configuration from your app:
+
+```go
+app := fuego.New()
+
+// Get the full config
+config := app.Config()
+fmt.Printf("Running on port: %s\n", config.Port)
+fmt.Printf("App directory: %s\n", config.AppDir)
+
+// Get the server address
+addr := config.Address()  // "0.0.0.0:3000"
+```
+
+## Logger Configuration
+
+Configure the request logger programmatically:
+
+```go
+app := fuego.New()
+
+// Configure logger with options
+app.SetLogger(fuego.RequestLoggerConfig{
+    ShowIP:        true,   // Show client IP address
+    ShowUserAgent: true,   // Show user agent string
+    ShowSize:      true,   // Show response size
+    SkipStatic:    true,   // Don't log static file requests
+    SkipPaths:     []string{"/health", "/ready", "/metrics"},
+    Level:         fuego.LogLevelInfo,
+})
+
+// Disable logger entirely
+app.DisableLogger()
+
+// Re-enable with defaults
+app.EnableLogger()
+```
+
+### Log Output Format
+
+The logger produces output like:
+
+```
+[12:34:56] GET /api/users 200 in 45ms (1.2KB)
+[12:34:57] POST /api/tasks 201 in 123ms (256B)
+[12:34:58] GET /v1/users → /api/users 200 in 52ms [rewrite]
+[12:34:59] GET /api/admin 403 in 1ms [proxy]
+```
+
+With `ShowIP` and `ShowUserAgent`:
+
+```
+[12:34:56] 192.168.1.1 GET /api/users 200 in 45ms (1.2KB) Mozilla/5.0...
+```
+
+## Validation
+
+Fuego validates configuration at startup:
+
+```go
+config := app.Config()
+
+if err := config.Validate(); err != nil {
+    log.Fatalf("invalid configuration: %v", err)
+}
+```
+
+Validation checks:
+- Port is not empty
+- App directory is not empty
+- App directory exists (if specified)
+
+<Warning>
+If the `app_dir` doesn't exist, Fuego will fail to start. Make sure the directory exists before running your application.
+</Warning>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use environment variables in production">
+Don't commit production secrets or configuration to git. Use environment variables for deployment-specific settings.
+  </Accordion>
+  <Accordion title="Keep fuego.yaml for development defaults">
+Use `fuego.yaml` for sensible development defaults that all team members can share.
+  </Accordion>
+  <Accordion title="Override per environment">
+```bash
+# Development
+fuego dev
+
+# Production
+FUEGO_PORT=8080 GO_ENV=production ./myapp
+```
+  </Accordion>
+  <Accordion title="Validate early">
+Check configuration at startup rather than failing later:
+```go
+if err := app.Config().Validate(); err != nil {
+    log.Fatal(err)
+}
+```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/docs/getting-started/quickstart">
+    Get your first app running
+  </Card>
+  <Card title="Deployment" icon="cloud" href="/docs/guides/deployment">
+    Deploy your Fuego app
+  </Card>
+  <Card title="Middleware" icon="layer-group" href="/docs/middleware/overview">
+    Configure middleware behavior
+  </Card>
+  <Card title="Performance" icon="gauge-high" href="/docs/advanced/performance">
+    Optimize your configuration
+  </Card>
+</CardGroup>

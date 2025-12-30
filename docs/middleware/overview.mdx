@@ -1,0 +1,350 @@
+---
+title: Middleware
+description: 'Add cross-cutting concerns like authentication, logging, and timing to your routes.'
+---
+
+Fuego provides a powerful middleware system with built-in middleware and support for custom middleware.
+
+## How Middleware Works
+
+Middleware wraps handlers to add functionality:
+
+```go
+func MyMiddleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            // Before handler
+            fmt.Println("Request started")
+            
+            err := next(c) // Call the handler
+            
+            // After handler
+            fmt.Println("Request finished")
+            
+            return err
+        }
+    }
+}
+```
+
+## Middleware Execution Order
+
+```
+Request
+    → App-Level Logger (captures ALL requests)
+    → Proxy (if configured)
+    → Global Middleware (in order added)
+        → Path Middleware (inherited from parent)
+            → Route Middleware
+                → Handler
+            ← Route Middleware
+        ← Path Middleware
+    ← Global Middleware
+Response
+```
+
+## Global Middleware
+
+Apply to all routes via `app.Use()`:
+
+```go
+app := fuego.New()
+app.Use(fuego.Recover())
+app.Use(fuego.RequestID())
+```
+
+## File-Based Middleware
+
+Create `middleware.go` in any app directory:
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <File name="middleware.go" />
+    <Folder name="api" defaultOpen>
+      <File name="middleware.go" />
+      <Folder name="users">
+        <File name="route.go" />
+      </Folder>
+      <Folder name="protected">
+        <File name="middleware.go" />
+        <File name="route.go" />
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+- `app/middleware.go` - Applies to all routes
+- `app/api/middleware.go` - Applies to `/api/*`
+- `app/api/protected/middleware.go` - Applies to `/api/protected/*`
+
+**Example `app/api/middleware.go`:**
+
+```go
+package api
+
+import (
+    "time"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+func Middleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            // Add API version header
+            c.SetHeader("X-API-Version", "1.0")
+            
+            // Track timing
+            start := time.Now()
+            err := next(c)
+            c.SetHeader("X-Response-Time", time.Since(start).String())
+            
+            return err
+        }
+    }
+}
+```
+
+## Built-in Middleware
+
+### Request Logger (App-Level)
+
+Fuego includes an app-level request logger that captures **all** requests, including those handled by the proxy layer. The logger is enabled by default.
+
+```go
+app := fuego.New() // Logger enabled by default!
+```
+
+Output:
+```
+[12:34:56] GET /api/users 200 in 45ms (1.2KB)
+[12:34:57] POST /api/tasks 201 in 123ms (256B)
+[12:34:58] GET /v1/users → /api/users 200 in 52ms [rewrite]
+[12:34:59] GET /api/admin 403 in 1ms [proxy]
+```
+
+#### Configuration
+
+```go
+app.SetLogger(fuego.RequestLoggerConfig{
+    ShowIP:        true,   // Show client IP
+    ShowUserAgent: true,   // Show user agent
+    ShowSize:      true,   // Show response size (default: true)
+    SkipStatic:    true,   // Don't log static files
+    SkipPaths:     []string{"/health", "/metrics"},
+    Level:         fuego.LogLevelInfo,
+})
+```
+
+#### Log Levels
+
+| Level | What's Logged |
+|-------|---------------|
+| `LogLevelDebug` | Everything + internal details |
+| `LogLevelInfo` | All requests (default) |
+| `LogLevelWarn` | 4xx + 5xx only |
+| `LogLevelError` | 5xx only |
+| `LogLevelOff` | Nothing |
+
+#### Environment Variables
+
+- `FUEGO_LOG_LEVEL` - Set log level (`debug`, `info`, `warn`, `error`, `off`)
+- `FUEGO_DEV=true` - Automatically sets debug level
+- `GO_ENV=production` - Automatically sets warn level
+
+#### Disable/Enable Logger
+
+```go
+app.DisableLogger() // Disable logging
+app.EnableLogger()  // Re-enable with default config
+```
+
+### Recover
+
+Recovers from panics and returns 500 error:
+
+```go
+app.Use(fuego.Recover())
+```
+
+### RequestID
+
+Adds a unique request ID header:
+
+```go
+app.Use(fuego.RequestID())
+```
+
+Header: `X-Request-Id: abc123...`
+
+### CORS
+
+Handle Cross-Origin Resource Sharing:
+
+```go
+// Simple - allow all origins
+app.Use(fuego.CORS())
+
+// Configured
+app.Use(fuego.CORSWithConfig(fuego.CORSConfig{
+    AllowOrigins:     []string{"https://example.com"},
+    AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
+    AllowHeaders:     []string{"Authorization", "Content-Type"},
+    AllowCredentials: true,
+    MaxAge:           86400,
+}))
+```
+
+### Timeout
+
+Set request timeout:
+
+```go
+app.Use(fuego.Timeout(30 * time.Second))
+```
+
+### BasicAuth
+
+Simple username/password authentication:
+
+```go
+app.Use(fuego.BasicAuth(func(user, pass string) bool {
+    return user == "admin" && pass == "secret"
+}))
+```
+
+### SecureHeaders
+
+Add security-related headers:
+
+```go
+app.Use(fuego.SecureHeaders())
+```
+
+Adds:
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: SAMEORIGIN`
+- `X-XSS-Protection: 1; mode=block`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+
+### RateLimiter
+
+Limit requests per IP:
+
+```go
+app.Use(fuego.RateLimiter(100, time.Minute)) // 100 requests per minute
+```
+
+## Custom Middleware
+
+Create your own middleware using the factory pattern:
+
+```go
+func AuthMiddleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            token := c.Header("Authorization")
+            if token == "" {
+                return fuego.Unauthorized("missing authorization header")
+            }
+            
+            user, err := validateToken(token)
+            if err != nil {
+                return fuego.Unauthorized("invalid token")
+            }
+            
+            // Store user in context for handlers
+            c.Set("user", user)
+            
+            return next(c)
+        }
+    }
+}
+```
+
+### Authentication Middleware Example
+
+Here's a complete authentication middleware:
+
+```go
+// app/api/protected/middleware.go
+package protected
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+func Middleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            token := c.Header("Authorization")
+            if token == "" {
+                return c.JSON(401, map[string]string{
+                    "error":   "unauthorized",
+                    "message": "Authorization header required",
+                })
+            }
+
+            // In a real app, validate the JWT token here
+            if token != "Bearer valid-token" {
+                return c.JSON(403, map[string]string{
+                    "error":   "forbidden",
+                    "message": "Invalid token",
+                })
+            }
+
+            // Add user info to context
+            c.Set("user_id", "user-123")
+            c.Set("user_role", "admin")
+
+            return next(c)
+        }
+    }
+}
+```
+
+## Middleware vs Proxy
+
+| Feature | Middleware | Proxy |
+|---------|------------|-------|
+| Runs | After routing | Before routing |
+| URL rewriting | No | Yes |
+| Access route params | Yes | No |
+| Per-route control | Yes | Via matchers |
+| Location | `middleware.go` | `app/proxy.go` |
+
+See [Proxy Documentation](/docs/middleware/proxy) for pre-routing manipulation.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Order matters">
+    Add recover first, then other middleware. The order you add middleware determines execution order.
+  </Accordion>
+  <Accordion title="Keep it focused">
+    Each middleware should do one thing well. Don't combine authentication, logging, and timing in one middleware.
+  </Accordion>
+  <Accordion title="Handle errors properly">
+    Return proper errors, don't panic. Use the error helpers like `fuego.Unauthorized()`.
+  </Accordion>
+  <Accordion title="Use context for sharing data">
+    Store shared data with `c.Set()` and retrieve with `c.Get()`.
+  </Accordion>
+  <Accordion title="Be careful with state">
+    Middleware runs concurrently. Avoid shared mutable state without proper synchronization.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Proxy" icon="shield" href="/docs/middleware/proxy">
+    Request interception before routing
+  </Card>
+  <Card title="Authentication" icon="lock" href="/docs/guides/authentication">
+    Complete auth patterns
+  </Card>
+  <Card title="Context API" icon="code" href="/docs/api/context">
+    Working with request context
+  </Card>
+  <Card title="Examples" icon="code" href="/docs/guides/examples">
+    Working code samples
+  </Card>
+</CardGroup>

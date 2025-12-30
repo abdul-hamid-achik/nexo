@@ -5,13 +5,13 @@ description: 'File-based routing for Go. Fast to write. Faster to run.'
 
 <img
   className="block dark:hidden"
-  src="/images/hero-light.svg"
-  alt="Fuego Hero Light"
+  src="/docs/images/hero-light.svg"
+  alt="Fuego - File-based routing for Go"
 />
 <img
   className="hidden dark:block"
-  src="/images/hero-dark.svg"
-  alt="Fuego Hero Dark"
+  src="/docs/images/hero-dark.svg"
+  alt="Fuego - File-based routing for Go"
 />
 
 ## What is Fuego?
@@ -22,28 +22,28 @@ Fuego is a file-based routing framework for Go, inspired by Next.js App Router. 
   <Card
     title="Quick Start"
     icon="rocket"
-    href="/getting-started/quickstart"
+    href="/docs/getting-started/quickstart"
   >
     Get up and running in under 5 minutes
   </Card>
   <Card
     title="File-Based Routing"
     icon="folder-tree"
-    href="/routing/file-based"
+    href="/docs/routing/file-based"
   >
     Learn how your files become routes
   </Card>
   <Card
     title="Middleware"
     icon="layer-group"
-    href="/middleware/overview"
+    href="/docs/middleware/overview"
   >
     Add cross-cutting concerns with ease
   </Card>
   <Card
     title="Context API"
     icon="code"
-    href="/api/context"
+    href="/docs/api/context"
   >
     Complete API reference for handlers
   </Card>
@@ -63,11 +63,26 @@ r.HandleFunc("/api/posts", postsHandler)
 
 With Fuego, your file structure is your router:
 
-```
-app/api/users/route.go      → GET/POST /api/users
-app/api/users/[id]/route.go → GET/PUT/DELETE /api/users/:id
-app/api/posts/route.go      → GET/POST /api/posts
-```
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="api" defaultOpen>
+      <Folder name="users">
+        <File name="route.go" />
+        <Folder name="[id]">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+      <Folder name="posts">
+        <File name="route.go" />
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+This maps to:
+- `app/api/users/route.go` → `GET/POST /api/users`
+- `app/api/users/[id]/route.go` → `GET/PUT/DELETE /api/users/:id`
+- `app/api/posts/route.go` → `GET/POST /api/posts`
 
 **No registration. No configuration. Just files.**
 
@@ -76,10 +91,18 @@ app/api/posts/route.go      → GET/POST /api/posts
 <AccordionGroup>
   <Accordion title="File System Routing" icon="folder">
     Your directory structure defines your routes. Create a file, get a route.
-    ```
-    app/api/users/route.go → /api/users
-    app/api/users/[id]/route.go → /api/users/:id
-    ```
+    
+    <FileTree>
+      <Folder name="app" defaultOpen>
+        <Folder name="api" defaultOpen>
+          <Folder name="users">
+            <File name="route.go" />
+          </Folder>
+        </Folder>
+      </Folder>
+    </FileTree>
+    
+    Maps to `/api/users`
   </Accordion>
   <Accordion title="Zero-Config Start" icon="bolt">
     A working API in 5 lines of code. Sensible defaults, full control when needed.
@@ -172,6 +195,29 @@ If you've used Next.js, Nuxt, SvelteKit, or similar frameworks, Fuego's patterns
 | Pages | `app/dashboard/page.templ` | `/dashboard` |
 | Layouts | `app/layout.templ` | Wraps child pages |
 
-<Card title="Familiar Patterns Guide" icon="book" href="/getting-started/familiar-patterns">
+<Card title="Familiar Patterns Guide" icon="book" href="/docs/getting-started/familiar-patterns">
   Learn how Fuego compares to frameworks you already know
 </Card>
+
+## Explore More
+
+<CardGroup cols={3}>
+  <Card title="HTMX Integration" icon="bolt" href="/docs/frontend/htmx">
+    Build interactive UIs
+  </Card>
+  <Card title="Tailwind CSS" icon="paintbrush" href="/docs/frontend/tailwind">
+    Style your apps
+  </Card>
+  <Card title="Authentication" icon="lock" href="/docs/guides/authentication">
+    Protect your routes
+  </Card>
+  <Card title="Templates" icon="file-code" href="/docs/core-concepts/templates">
+    Type-safe HTML with templ
+  </Card>
+  <Card title="Examples" icon="code" href="/docs/guides/examples">
+    Working code samples
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/docs/reference/cli">
+    All commands documented
+  </Card>
+</CardGroup>

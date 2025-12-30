@@ -353,27 +353,35 @@ middleware:
   recover: true
 ```
 
-## Examples
-
-Explore working examples in the [examples/](examples/) directory:
-
-| Example | What You'll Learn |
-|---------|-------------------|
-| [basic](examples/basic/) | File-based routing fundamentals, middleware basics |
-| [dynamic-routes](examples/dynamic-routes/) | URL parameters, catch-all routes, route groups |
-| [fullstack](examples/fullstack/) | Templ pages, Tailwind CSS, HTMX interactivity |
-| [middleware](examples/middleware/) | Authentication, CORS, request timing, middleware chains |
-| [proxy](examples/proxy/) | Request interception, URL rewrites, access control |
-
 ## Documentation
 
-- [Quick Start](docs/getting-started/quickstart.md)
-- [Familiar Patterns](docs/getting-started/familiar-patterns.md)
-- [File-based Routing](docs/routing/file-based.md)
-- [Middleware](docs/middleware/overview.md)
-- [Proxy](docs/middleware/proxy.md)
-- [Context API](docs/api/context.md)
-- [Deployment](docs/guides/deployment.md)
+Full documentation is available at [gofuego.dev](https://gofuego.dev).
+
+**Getting Started:**
+- [Quick Start](/docs/getting-started/quickstart)
+- [Familiar Patterns](/docs/getting-started/familiar-patterns)
+
+**Core Concepts:**
+- [File-based Routing](/docs/routing/file-based)
+- [Middleware](/docs/middleware/overview)
+- [Proxy](/docs/middleware/proxy)
+- [Templates](/docs/core-concepts/templates)
+- [Static Files](/docs/core-concepts/static-files)
+
+**Frontend:**
+- [HTMX Integration](/docs/frontend/htmx)
+- [Tailwind CSS](/docs/frontend/tailwind)
+- [Forms](/docs/frontend/forms)
+
+**Guides:**
+- [Examples](/docs/guides/examples) - Working code examples for common patterns
+- [Authentication](/docs/guides/authentication)
+- [Database](/docs/guides/database)
+- [Deployment](/docs/guides/deployment)
+
+**Reference:**
+- [Context API](/docs/api/context)
+- [CLI Reference](/docs/reference/cli)
 
 ## Development
 

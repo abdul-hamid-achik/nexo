@@ -1,0 +1,911 @@
+---
+title: CLI Reference
+description: 'Complete reference for all Fuego CLI commands, flags, and options.'
+---
+
+This page documents all available Fuego CLI commands with their flags, examples, and best practices.
+
+## Installation
+
+<CodeGroup>
+
+```bash Homebrew (macOS/Linux)
+brew install abdul-hamid-achik/tap/fuego-cli
+```
+
+```bash Go Install
+go install github.com/abdul-hamid-achik/fuego/cmd/fuego@latest
+```
+
+</CodeGroup>
+
+Verify installation:
+
+```bash
+fuego --version
+```
+
+---
+
+## fuego new
+
+Create a new Fuego project with the recommended directory structure.
+
+```bash
+fuego new <name> [flags]
+```
+
+### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `name` | Project name (required). Creates a directory with this name. |
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--api-only` | | `false` | Create an API-only project without templ pages, Tailwind, or HTMX |
+| `--skip-prompts` | | `false` | Skip interactive prompts and use defaults (full-stack) |
+
+### Examples
+
+```bash
+# Interactive mode (prompts for options)
+fuego new myapp
+
+# Full-stack project with templ, Tailwind, and HTMX
+fuego new myapp --skip-prompts
+
+# API-only project (no frontend)
+fuego new myapp --api-only
+```
+
+### Output Structure
+
+<Tabs>
+  <Tab title="Full-Stack">
+    ```
+    myapp/
+    ├── app/
+    │   ├── api/
+    │   │   └── health/
+    │   │       └── route.go
+    │   ├── layout.templ
+    │   └── page.templ
+    ├── static/
+    │   └── css/
+    ├── styles/
+    │   └── input.css
+    ├── main.go
+    ├── fuego.yaml
+    ├── go.mod
+    └── .gitignore
+    ```
+  </Tab>
+  <Tab title="API-Only">
+    ```
+    myapp/
+    ├── app/
+    │   └── api/
+    │       └── health/
+    │           └── route.go
+    ├── static/
+    ├── main.go
+    ├── fuego.yaml
+    ├── go.mod
+    └── .gitignore
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+After creating a project, the CLI automatically initializes a git repository and fetches Go dependencies.
+</Tip>
+
+---
+
+## fuego dev
+
+Start the development server with hot reload. Automatically rebuilds when Go or templ files change.
+
+```bash
+fuego dev [flags]
+```
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--port` | `-p` | `3000` | Port to run the server on |
+| `--host` | `-H` | `0.0.0.0` | Host to bind to |
+
+### Examples
+
+```bash
+# Default (port 3000)
+fuego dev
+
+# Custom port
+fuego dev --port 8080
+
+# Bind to localhost only
+fuego dev --host 127.0.0.1 --port 3000
+```
+
+### What It Does
+
+1. Generates route registration code from your `app/` directory
+2. Runs `templ generate` if `.templ` files exist
+3. Starts Tailwind CSS watcher if `styles/input.css` exists
+4. Starts the Go server with live reload
+5. Watches for file changes and auto-rebuilds
+
+### Output
+
+```
+  Fuego Development Server
+
+  → Generating routes...
+  ✓ Routes generated
+  → Running templ generate...
+  → Starting Tailwind CSS watcher...
+  ✓ Tailwind watcher started
+  ✓ Watching for changes...
+
+  ➜ Local:   http://localhost:3000
+  ➜ Network: http://0.0.0.0:3000
+```
+
+<Info>
+The development server automatically detects and uses a local Fuego installation if the published module isn't available yet.
+</Info>
+
+---
+
+## fuego build
+
+Build the application as an optimized production binary.
+
+```bash
+fuego build [flags]
+```
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--output` | `-o` | `./bin/<project>` | Output binary path |
+| `--os` | | Current OS | Target OS (linux, darwin, windows) |
+| `--arch` | | Current arch | Target architecture (amd64, arm64) |
+| `--json` | | `false` | Output result as JSON |
+
+### Examples
+
+```bash
+# Default build
+fuego build
+
+# Custom output path
+fuego build --output ./dist/server
+
+# Cross-compile for Linux
+fuego build --os linux --arch amd64
+
+# Cross-compile for ARM (e.g., Raspberry Pi, AWS Graviton)
+fuego build --os linux --arch arm64
+
+# JSON output for CI/CD
+fuego build --json
+```
+
+### Build Process
+
+1. Runs `templ generate` if `.templ` files exist
+2. Builds Tailwind CSS (minified) if `styles/input.css` exists
+3. Compiles Go binary with optimizations (`-ldflags "-s -w"`)
+
+### Output
+
+```
+  Fuego Production Build
+
+  → Running templ generate...
+  ✓ Templates generated
+  → Building Tailwind CSS...
+  ✓ CSS built
+  → Building binary...
+  ✓ Build successful
+
+  Output: bin/myapp
+  Size:   12.45 MB
+
+  Run with: ./bin/myapp
+```
+
+<Tip>
+The production binary includes stripped debug information for smaller size. Typical binaries are 10-15MB.
+</Tip>
+
+---
+
+## fuego routes
+
+List all registered routes discovered in the app directory.
+
+```bash
+fuego routes [flags]
+```
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--app-dir` | `-d` | `app` | App directory to scan |
+| `--json` | | `false` | Output as JSON |
+
+### Examples
+
+```bash
+# List all routes
+fuego routes
+
+# JSON output (for tooling)
+fuego routes --json
+
+# Custom app directory
+fuego routes --app-dir custom/app
+```
+
+### Output
+
+```
+  Fuego Routes
+
+  PROXY   Proxy enabled
+          Matchers: all paths
+          File: app/proxy.go
+
+  Middleware:
+          /api                          app/api/middleware.go
+          /api/protected                app/api/protected/middleware.go
+
+  GET     /                             app/page.templ
+  GET     /api/health                   app/api/health/route.go
+  GET     /api/users                    app/api/users/route.go
+  POST    /api/users                    app/api/users/route.go
+  GET     /api/users/{id}               app/api/users/[id]/route.go
+  PUT     /api/users/{id}               app/api/users/[id]/route.go
+  DELETE  /api/users/{id}               app/api/users/[id]/route.go
+
+  Total: 7 routes
+```
+
+### JSON Output
+
+```json
+{
+  "success": true,
+  "data": {
+    "routes": [
+      {"method": "GET", "pattern": "/api/health", "file": "app/api/health/route.go"}
+    ],
+    "middleware": [
+      {"path": "/api", "file": "app/api/middleware.go"}
+    ],
+    "proxy": {
+      "enabled": true,
+      "file": "app/proxy.go"
+    },
+    "total": 1
+  }
+}
+```
+
+---
+
+## fuego generate route
+
+Generate a new route file with handler functions.
+
+```bash
+fuego generate route <path> [flags]
+```
+
+### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `path` | Route path relative to `app/api/` (required) |
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--methods` | `-m` | `GET` | HTTP methods (comma-separated) |
+| `--app-dir` | `-d` | `app` | App directory |
+
+### Path Patterns
+
+| Pattern | Example | URL |
+|---------|---------|-----|
+| Static | `users` | `/api/users` |
+| Dynamic `[param]` | `users/[id]` | `/api/users/:id` |
+| Catch-all `[...param]` | `docs/[...slug]` | `/api/docs/*` |
+| Optional `[[...param]]` | `shop/[[...cat]]` | `/api/shop` and `/api/shop/*` |
+| Group `(name)` | `(admin)/settings` | `/api/settings` |
+
+### Examples
+
+```bash
+# Simple route (GET only)
+fuego generate route users
+
+# Multiple methods
+fuego generate route users --methods GET,POST
+
+# Dynamic route
+fuego generate route users/[id] --methods GET,PUT,DELETE
+
+# Catch-all route
+fuego generate route docs/[...slug] --methods GET
+
+# Route in a group (doesn't affect URL)
+fuego generate route "(admin)/settings" --methods GET,PUT
+```
+
+### Generated Code
+
+```go
+// app/api/users/[id]/route.go
+package users
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+// Get handles GET /api/users/:id
+func Get(c *fuego.Context) error {
+    id := c.Param("id")
+    return c.JSON(200, map[string]any{
+        "id": id,
+    })
+}
+
+// Put handles PUT /api/users/:id
+func Put(c *fuego.Context) error {
+    id := c.Param("id")
+    var body map[string]any
+    if err := c.Bind(&body); err != nil {
+        return c.JSON(400, map[string]string{"error": "invalid body"})
+    }
+    return c.JSON(200, map[string]any{
+        "id":      id,
+        "updated": true,
+    })
+}
+
+// Delete handles DELETE /api/users/:id
+func Delete(c *fuego.Context) error {
+    id := c.Param("id")
+    return c.JSON(200, map[string]string{
+        "message": "deleted " + id,
+    })
+}
+```
+
+---
+
+## fuego generate middleware
+
+Generate a middleware file with common patterns.
+
+```bash
+fuego generate middleware <name> [flags]
+```
+
+### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `name` | Middleware name (required) |
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--path` | `-p` | `""` | Path prefix (e.g., `api/protected`) |
+| `--template` | `-t` | `blank` | Template to use |
+| `--app-dir` | `-d` | `app` | App directory |
+
+### Templates
+
+| Template | Description |
+|----------|-------------|
+| `blank` | Empty middleware (default) |
+| `auth` | Authentication checking |
+| `logging` | Request/response logging |
+| `timing` | Response time headers |
+| `cors` | CORS headers |
+
+### Examples
+
+```bash
+# Root middleware (applies to all routes)
+fuego generate middleware global --template logging
+
+# API middleware
+fuego generate middleware api --path api --template timing
+
+# Auth middleware for protected routes
+fuego generate middleware auth --path api/protected --template auth
+
+# CORS middleware
+fuego generate middleware cors --path api --template cors
+```
+
+### Generated Code (auth template)
+
+```go
+// app/api/protected/middleware.go
+package protected
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+func Middleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            token := c.Header("Authorization")
+            if token == "" {
+                return c.JSON(401, map[string]string{
+                    "error": "Authorization header required",
+                })
+            }
+
+            // TODO: Validate token here
+            // user, err := validateToken(token)
+
+            // c.Set("user", user)
+            return next(c)
+        }
+    }
+}
+```
+
+<Tip>
+Middleware files automatically apply to all routes in their directory and subdirectories. Place them strategically in your file structure.
+</Tip>
+
+---
+
+## fuego generate proxy
+
+Generate a proxy file for request interception.
+
+```bash
+fuego generate proxy [flags]
+```
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--template` | `-t` | `blank` | Template to use |
+| `--app-dir` | `-d` | `app` | App directory |
+
+### Templates
+
+| Template | Description |
+|----------|-------------|
+| `blank` | Empty proxy (default) |
+| `auth-check` | Authentication checking before routing |
+| `rate-limit` | Simple IP-based rate limiting |
+| `maintenance` | Maintenance mode with allowed IPs |
+| `redirect-www` | WWW/non-WWW redirect handling |
+
+### Examples
+
+```bash
+# Empty proxy
+fuego generate proxy
+
+# Auth checking
+fuego generate proxy --template auth-check
+
+# Rate limiting
+fuego generate proxy --template rate-limit
+
+# Maintenance mode
+fuego generate proxy --template maintenance
+```
+
+### Generated Code (auth-check template)
+
+```go
+// app/proxy.go
+package app
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+func Proxy(c *fuego.Context) (*fuego.ProxyResult, error) {
+    // Skip auth for public paths
+    path := c.Path()
+    if path == "/api/health" || path == "/api/auth/login" {
+        return fuego.Continue(), nil
+    }
+
+    // Check authentication
+    token := c.Header("Authorization")
+    if token == "" {
+        return fuego.ResponseJSON(401, map[string]string{
+            "error": "unauthorized",
+        }), nil
+    }
+
+    // Continue to router
+    return fuego.Continue(), nil
+}
+```
+
+### Proxy Actions
+
+| Action | Description |
+|--------|-------------|
+| `fuego.Continue()` | Continue with normal routing |
+| `fuego.Redirect(url, code)` | Redirect to another URL |
+| `fuego.Rewrite(path)` | Rewrite URL internally |
+| `fuego.ResponseJSON(code, data)` | Return response immediately |
+
+<Info>
+The proxy runs **before** route matching, so it cannot access route parameters. Use middleware for route-specific logic.
+</Info>
+
+---
+
+## fuego generate page
+
+Generate a page template file for rendering HTML pages.
+
+```bash
+fuego generate page <path> [flags]
+```
+
+### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `path` | Page path relative to `app/` (required) |
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--with-layout` | | `false` | Also generate a layout.templ for this section |
+| `--app-dir` | `-d` | `app` | App directory |
+
+### Examples
+
+```bash
+# Simple page
+fuego generate page dashboard
+
+# Nested page
+fuego generate page admin/settings
+
+# Page with section-specific layout
+fuego generate page blog/posts --with-layout
+```
+
+### Generated Code
+
+```go
+// app/dashboard/page.templ
+package dashboard
+
+templ Page() {
+    <div class="p-4">
+        <h1 class="text-2xl font-bold">Dashboard</h1>
+        <p>Welcome to the dashboard!</p>
+    </div>
+}
+```
+
+### With Layout
+
+```go
+// app/blog/layout.templ
+package blog
+
+templ Layout(title string) {
+    <div class="blog-layout">
+        <aside class="sidebar">
+            <!-- Blog navigation -->
+        </aside>
+        <main class="content">
+            { children... }
+        </main>
+    </div>
+}
+```
+
+<Tip>
+Pages automatically inherit from the nearest parent `layout.templ`. Use `--with-layout` to create section-specific layouts.
+</Tip>
+
+---
+
+## fuego tailwind build
+
+Build Tailwind CSS for production with minification.
+
+```bash
+fuego tailwind build [flags]
+```
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--input` | `-i` | `styles/input.css` | Input CSS file |
+| `--output` | `-o` | `static/css/output.css` | Output CSS file |
+| `--json` | | `false` | Output as JSON |
+
+### Examples
+
+```bash
+# Default paths
+fuego tailwind build
+
+# Custom paths
+fuego tailwind build --input src/styles/main.css --output public/css/app.css
+
+# JSON output for CI
+fuego tailwind build --json
+```
+
+### Output
+
+```
+  Fuego Tailwind Build
+
+  → Building CSS...
+  ✓ CSS built successfully
+
+  Input:  styles/input.css
+  Output: static/css/output.css
+  Size:   8.52 KB (minified)
+```
+
+<Info>
+Fuego uses the standalone Tailwind CSS v4 binary. No Node.js required!
+</Info>
+
+---
+
+## fuego tailwind watch
+
+Watch CSS files and rebuild on changes during development.
+
+```bash
+fuego tailwind watch [flags]
+```
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--input` | `-i` | `styles/input.css` | Input CSS file |
+| `--output` | `-o` | `static/css/output.css` | Output CSS file |
+
+### Examples
+
+```bash
+# Default paths
+fuego tailwind watch
+
+# Custom paths
+fuego tailwind watch --input src/styles/main.css --output public/css/app.css
+```
+
+### Output
+
+```
+  Fuego Tailwind Watch
+
+  → Starting Tailwind watch mode...
+  ✓ Watching for changes
+
+  Input:  styles/input.css
+  Output: static/css/output.css
+```
+
+<Tip>
+You don't usually need to run this manually. `fuego dev` automatically starts the Tailwind watcher.
+</Tip>
+
+---
+
+## fuego tailwind install
+
+Download the Tailwind CSS standalone binary.
+
+```bash
+fuego tailwind install
+```
+
+### Behavior
+
+- Downloads the appropriate Tailwind binary for your OS/architecture
+- Caches it at `~/.cache/fuego/bin/`
+- Shared across all Fuego projects
+
+### Output
+
+```
+  Fuego Tailwind Install
+
+  → Downloading Tailwind v4.0.0...
+  ✓ Tailwind installed successfully
+
+  Version: v4.0.0
+  Path:    /Users/you/.cache/fuego/bin/tailwindcss
+```
+
+<Info>
+The binary is automatically downloaded when needed. Use this command to pre-install for offline use.
+</Info>
+
+---
+
+## fuego tailwind info
+
+Show information about the Tailwind CSS installation.
+
+```bash
+fuego tailwind info [flags]
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--json` | `false` | Output as JSON |
+
+### Examples
+
+```bash
+fuego tailwind info
+fuego tailwind info --json
+```
+
+### Output
+
+```
+  Fuego Tailwind Info
+
+  ✓ Installed
+  Version: v4.0.0
+
+  Binary:   /Users/you/.cache/fuego/bin/tailwindcss
+  Cache:    /Users/you/.cache/fuego
+
+  Project:
+  ✓ styles/input.css found
+  ✓ Output CSS exists
+```
+
+---
+
+## fuego mcp serve
+
+Start an MCP (Model Context Protocol) server for AI assistant integration.
+
+```bash
+fuego mcp serve [flags]
+```
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--workdir` | `-w` | Current directory | Working directory for operations |
+
+### MCP Tools Exposed
+
+| Tool | Description |
+|------|-------------|
+| `fuego_new` | Create a new Fuego project |
+| `fuego_generate_route` | Generate a route file |
+| `fuego_generate_middleware` | Generate middleware |
+| `fuego_generate_proxy` | Generate proxy file |
+| `fuego_generate_page` | Generate page template |
+| `fuego_list_routes` | List all routes |
+| `fuego_info` | Get project information |
+| `fuego_validate` | Validate project structure |
+
+### Configuration
+
+<Tabs>
+  <Tab title="Claude Desktop">
+    Add to `claude_desktop_config.json`:
+    ```json
+    {
+      "mcpServers": {
+        "fuego": {
+          "command": "fuego",
+          "args": ["mcp", "serve", "--workdir", "/path/to/project"]
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="OpenCode / Claude Code">
+    Configure your MCP settings to run:
+    ```bash
+    fuego mcp serve --workdir /path/to/project
+    ```
+  </Tab>
+</Tabs>
+
+### Example Usage
+
+Once configured, AI assistants can use natural language:
+
+```
+"Create a new route for /api/posts with GET and POST methods"
+"Add authentication middleware to /api/protected"
+"List all routes in this project"
+```
+
+---
+
+## Global Flags
+
+These flags are available on all commands:
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output results as JSON (where supported) |
+| `--help` | Show help for any command |
+| `--version` | Show version information |
+
+### Examples
+
+```bash
+# Get help for any command
+fuego new --help
+fuego generate route --help
+
+# JSON output
+fuego routes --json
+fuego build --json
+fuego tailwind info --json
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `PORT` | Default port for `fuego dev` (overridden by `--port`) |
+| `FUEGO_LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error`, `off` |
+| `FUEGO_DEV` | Set to `true` for debug logging |
+| `GO_ENV` | Set to `production` for warn-level logging |
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/docs/getting-started/quickstart">
+    Create your first project
+  </Card>
+  <Card title="File-Based Routing" icon="folder-tree" href="/docs/routing/file-based">
+    Learn routing patterns
+  </Card>
+  <Card title="Middleware" icon="layer-group" href="/docs/middleware/overview">
+    Add cross-cutting concerns
+  </Card>
+  <Card title="Tailwind CSS" icon="paintbrush" href="/docs/frontend/tailwind">
+    Style your application
+  </Card>
+</CardGroup>

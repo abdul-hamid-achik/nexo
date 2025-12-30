@@ -1,0 +1,373 @@
+---
+title: File-Based Routing
+description: 'Your file structure defines your routes. No configuration required.'
+---
+
+Fuego uses a file-system based router inspired by Next.js App Router. Your file structure defines your routes.
+
+## Basic Routing
+
+Create `route.go` files to define API endpoints:
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="api" defaultOpen>
+      <Folder name="users">
+        <File name="route.go" />
+      </Folder>
+      <Folder name="posts">
+        <File name="route.go" />
+      </Folder>
+    </Folder>
+    <File name="route.go" />
+  </Folder>
+</FileTree>
+
+This creates:
+- `app/api/users/route.go` → `/api/users`
+- `app/api/posts/route.go` → `/api/posts`
+- `app/route.go` → `/`
+
+## Handler Functions
+
+Export functions named after HTTP methods:
+
+```go
+package users
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+// GET /api/users
+func Get(c *fuego.Context) error {
+    return c.JSON(200, []string{"alice", "bob"})
+}
+
+// POST /api/users
+func Post(c *fuego.Context) error {
+    return c.JSON(201, map[string]string{"status": "created"})
+}
+
+// PUT /api/users
+func Put(c *fuego.Context) error {
+    return c.JSON(200, map[string]string{"status": "updated"})
+}
+
+// PATCH /api/users
+func Patch(c *fuego.Context) error {
+    return c.JSON(200, map[string]string{"status": "patched"})
+}
+
+// DELETE /api/users
+func Delete(c *fuego.Context) error {
+    return c.NoContent()
+}
+
+// HEAD /api/users
+func Head(c *fuego.Context) error {
+    return c.NoContent()
+}
+
+// OPTIONS /api/users
+func Options(c *fuego.Context) error {
+    c.SetHeader("Allow", "GET, POST, PUT, PATCH, DELETE")
+    return c.NoContent()
+}
+```
+
+<Info>
+All handlers must have the signature `func(c *fuego.Context) error`. Invalid signatures are skipped with a warning.
+</Info>
+
+## Dynamic Routes
+
+Use `[param]` folders for dynamic segments:
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="api" defaultOpen>
+      <Folder name="users">
+        <File name="route.go" />
+        <Folder name="[id]">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+This creates:
+- `/api/users` - static route
+- `/api/users/:id` - dynamic route
+
+```go
+package users
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+// GET /api/users/:id
+func Get(c *fuego.Context) error {
+    id := c.Param("id")
+    return c.JSON(200, map[string]string{"id": id})
+}
+```
+
+### Multiple Parameters
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="api" defaultOpen>
+      <Folder name="orgs">
+        <Folder name="[orgId]">
+          <Folder name="teams">
+            <Folder name="[teamId]">
+              <File name="route.go" />
+            </Folder>
+          </Folder>
+        </Folder>
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+Maps to `/api/orgs/:orgId/teams/:teamId`
+
+```go
+func Get(c *fuego.Context) error {
+    orgId := c.Param("orgId")
+    teamId := c.Param("teamId")
+    return c.JSON(200, map[string]string{
+        "orgId":  orgId,
+        "teamId": teamId,
+    })
+}
+```
+
+## Catch-All Routes
+
+Use `[...param]` for catch-all routes:
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="api" defaultOpen>
+      <Folder name="docs">
+        <Folder name="[...slug]">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+Maps to `/api/docs/*`
+
+```go
+func Get(c *fuego.Context) error {
+    // /api/docs/api/users/create → slug = "api/users/create"
+    slug := c.Param("slug")
+    segments := strings.Split(slug, "/")
+    return c.JSON(200, map[string]any{
+        "slug":     slug,
+        "segments": segments,
+    })
+}
+```
+
+**Examples:**
+- `/api/docs/hello` → `slug = "hello"`
+- `/api/docs/2024/01/my-post` → `slug = "2024/01/my-post"`
+
+## Optional Catch-All
+
+Use `[[...param]]` for optional catch-all (matches with or without segments):
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="api" defaultOpen>
+      <Folder name="shop">
+        <Folder name="[[...categories]]">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+Matches:
+- `/api/shop` → categories = `""`
+- `/api/shop/electronics` → categories = `"electronics"`
+- `/api/shop/electronics/phones` → categories = `"electronics/phones"`
+
+## Route Groups
+
+Use `(groupname)` folders to organize without affecting URLs:
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="api" defaultOpen>
+      <Folder name="(marketing)">
+        <Folder name="about">
+          <File name="route.go" />
+        </Folder>
+        <Folder name="blog">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+      <Folder name="(shop)">
+        <Folder name="products">
+          <File name="route.go" />
+        </Folder>
+        <Folder name="cart">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+Creates:
+- `/api/about` (not `/api/marketing/about`)
+- `/api/blog`
+- `/api/products`
+- `/api/cart`
+
+<Tip>
+Route groups are great for organizing code and applying shared middleware without affecting URLs.
+</Tip>
+
+## Private Folders
+
+Folders starting with `_` are ignored:
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="_components">
+      <File name="button.go" />
+    </Folder>
+    <Folder name="_utils">
+      <File name="helpers.go" />
+    </Folder>
+    <Folder name="api">
+      <File name="route.go" />
+    </Folder>
+  </Folder>
+</FileTree>
+
+The `_components` and `_utils` folders are ignored by the router.
+
+## Route Priority
+
+Routes are matched in order of specificity:
+
+1. **Static routes** (highest priority)
+   - `/api/users/me` matches before `/api/users/:id`
+
+2. **Dynamic routes**
+   - `/api/users/:id` matches after static routes
+
+3. **Catch-all routes** (lowest priority)
+   - `/docs/*` matches last
+
+**Example:**
+
+```
+GET /api/users/me   → matches /api/users/me (static)
+GET /api/users/123  → matches /api/users/:id (dynamic)
+GET /docs/anything  → matches /docs/* (catch-all)
+```
+
+## Viewing Routes
+
+Use the CLI to list all routes:
+
+```bash
+fuego routes
+```
+
+Output:
+```
+  Fuego Routes
+
+  GET     /                             app/route.go
+  GET     /api/health                   app/api/health/route.go
+  GET     /api/users                    app/api/users/route.go
+  POST    /api/users                    app/api/users/route.go
+  GET     /api/users/{id}               app/api/users/[id]/route.go
+
+  Total: 5 routes
+```
+
+Add `--json` for machine-readable output:
+
+```bash
+fuego routes --json
+```
+
+## Handler Signature
+
+All handlers must have this signature:
+
+```go
+func HandlerName(c *fuego.Context) error
+```
+
+<Warning>
+Invalid signatures are skipped with a warning. Make sure your handlers match the expected signature.
+</Warning>
+
+## Complete Example
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="api" defaultOpen>
+      <File name="middleware.go" />
+      <Folder name="health">
+        <File name="route.go" />
+      </Folder>
+      <Folder name="users">
+        <File name="route.go" />
+        <Folder name="[id]">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+      <Folder name="posts">
+        <Folder name="[...slug]">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+      <Folder name="(admin)">
+        <Folder name="settings">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+    <File name="page.templ" />
+    <File name="layout.templ" />
+  </Folder>
+</FileTree>
+
+Routes created:
+| Method | Route | File |
+|--------|-------|------|
+| GET | `/` | `app/page.templ` |
+| GET | `/api/health` | `app/api/health/route.go` |
+| GET,POST | `/api/users` | `app/api/users/route.go` |
+| GET,PUT,DELETE | `/api/users/:id` | `app/api/users/[id]/route.go` |
+| GET | `/api/posts/*` | `app/api/posts/[...slug]/route.go` |
+| GET,PUT | `/api/settings` | `app/api/(admin)/settings/route.go` |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Middleware" icon="layer-group" href="/docs/middleware/overview">
+    Add cross-cutting concerns
+  </Card>
+  <Card title="Context API" icon="code" href="/docs/api/context">
+    Request and response handling
+  </Card>
+  <Card title="Proxy" icon="shield" href="/docs/middleware/proxy">
+    Request interception
+  </Card>
+  <Card title="Examples" icon="code" href="/docs/guides/examples">
+    Working code samples
+  </Card>
+</CardGroup>

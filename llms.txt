@@ -1,6 +1,8 @@
 # Fuego Framework - LLM Agent Reference
 
 > A file-system based Go framework for APIs and websites, inspired by Next.js App Router.
+> 
+> Documentation: https://gofuego.dev
 
 ## Quick Commands
 

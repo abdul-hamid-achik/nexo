@@ -1,0 +1,1555 @@
+---
+title: Examples
+description: 'Complete working examples covering APIs, dynamic routes, full-stack applications, middleware, and proxy patterns.'
+---
+
+This guide provides comprehensive, production-ready examples for building applications with Fuego. Each example is complete and can be used as a starting point for your projects.
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Basic API" icon="server" href="#basic-api">
+    Health endpoints and user CRUD operations
+  </Card>
+  <Card title="Dynamic Routes" icon="route" href="#dynamic-routes">
+    Parameters, catch-all routes, and route groups
+  </Card>
+  <Card title="Full-Stack App" icon="window" href="#full-stack-application">
+    Templ templates, HTMX interactions, Tailwind CSS
+  </Card>
+  <Card title="Middleware" icon="layer-group" href="#middleware-patterns">
+    Global, route-level, and authentication middleware
+  </Card>
+  <Card title="Proxy" icon="shield" href="#proxy-patterns">
+    URL rewriting, auth checks, rate limiting
+  </Card>
+</CardGroup>
+
+---
+
+## Basic API
+
+A simple REST API with health checks and user CRUD operations.
+
+### Project Structure
+
+<FileTree>
+  <Folder name="basic-api" defaultOpen>
+    <Folder name="app" defaultOpen>
+      <Folder name="api" defaultOpen>
+        <File name="middleware.go" />
+        <Folder name="health">
+          <File name="route.go" />
+        </Folder>
+        <Folder name="users">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+    <Folder name="internal">
+      <Folder name="store">
+        <File name="users.go" />
+      </Folder>
+    </Folder>
+    <File name="main.go" />
+    <File name="go.mod" />
+  </Folder>
+</FileTree>
+
+### Entry Point
+
+```go
+// main.go
+package main
+
+import (
+    "log"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+func main() {
+    app := fuego.New()
+    
+    log.Println("Starting server on :8080")
+    if err := app.Start(":8080"); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+### API Middleware
+
+```go
+// app/api/middleware.go
+package api
+
+import (
+    "time"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// Middleware adds common headers and timing to all API routes.
+func Middleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            // Add API version header
+            c.SetHeader("X-API-Version", "1.0.0")
+            
+            // Track response time
+            start := time.Now()
+            err := next(c)
+            c.SetHeader("X-Response-Time", time.Since(start).String())
+            
+            return err
+        }
+    }
+}
+```
+
+### Health Endpoint
+
+```go
+// app/api/health/route.go
+package health
+
+import (
+    "runtime"
+    "time"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+var startTime = time.Now()
+
+// HealthResponse represents the health check response.
+type HealthResponse struct {
+    Status    string `json:"status"`
+    Uptime    string `json:"uptime"`
+    GoVersion string `json:"go_version"`
+    Timestamp string `json:"timestamp"`
+}
+
+// GET /api/health
+func Get(c *fuego.Context) error {
+    return c.JSON(200, HealthResponse{
+        Status:    "healthy",
+        Uptime:    time.Since(startTime).String(),
+        GoVersion: runtime.Version(),
+        Timestamp: time.Now().UTC().Format(time.RFC3339),
+    })
+}
+```
+
+### User CRUD Operations
+
+```go
+// internal/store/users.go
+package store
+
+import (
+    "errors"
+    "sync"
+    "time"
+)
+
+// User represents a user in the system.
+type User struct {
+    ID        int       `json:"id"`
+    Name      string    `json:"name"`
+    Email     string    `json:"email"`
+    CreatedAt time.Time `json:"created_at"`
+    UpdatedAt time.Time `json:"updated_at"`
+}
+
+// UserStore is an in-memory user store.
+type UserStore struct {
+    users  map[int]*User
+    nextID int
+    mu     sync.RWMutex
+}
+
+// Default is the global user store instance.
+var Default = &UserStore{
+    users:  make(map[int]*User),
+    nextID: 1,
+}
+
+func (s *UserStore) List() []*User {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    
+    users := make([]*User, 0, len(s.users))
+    for _, u := range s.users {
+        users = append(users, u)
+    }
+    return users
+}
+
+func (s *UserStore) Get(id int) (*User, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    
+    user, ok := s.users[id]
+    if !ok {
+        return nil, errors.New("user not found")
+    }
+    return user, nil
+}
+
+func (s *UserStore) Create(name, email string) *User {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    
+    now := time.Now()
+    user := &User{
+        ID:        s.nextID,
+        Name:      name,
+        Email:     email,
+        CreatedAt: now,
+        UpdatedAt: now,
+    }
+    s.users[s.nextID] = user
+    s.nextID++
+    return user
+}
+
+func (s *UserStore) Update(id int, name, email string) (*User, error) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    
+    user, ok := s.users[id]
+    if !ok {
+        return nil, errors.New("user not found")
+    }
+    
+    if name != "" {
+        user.Name = name
+    }
+    if email != "" {
+        user.Email = email
+    }
+    user.UpdatedAt = time.Now()
+    
+    return user, nil
+}
+
+func (s *UserStore) Delete(id int) error {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    
+    if _, ok := s.users[id]; !ok {
+        return errors.New("user not found")
+    }
+    delete(s.users, id)
+    return nil
+}
+```
+
+```go
+// app/api/users/route.go
+package users
+
+import (
+    "myapp/internal/store"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// GET /api/users - List all users
+func Get(c *fuego.Context) error {
+    users := store.Default.List()
+    return c.JSON(200, map[string]any{
+        "users": users,
+        "count": len(users),
+    })
+}
+
+// POST /api/users - Create a new user
+func Post(c *fuego.Context) error {
+    var input struct {
+        Name  string `json:"name"`
+        Email string `json:"email"`
+    }
+    
+    if err := c.Bind(&input); err != nil {
+        return c.JSON(400, map[string]string{"error": "invalid request body"})
+    }
+    
+    if input.Name == "" || input.Email == "" {
+        return c.JSON(400, map[string]string{"error": "name and email are required"})
+    }
+    
+    user := store.Default.Create(input.Name, input.Email)
+    return c.JSON(201, user)
+}
+```
+
+### Testing the API
+
+```bash
+# Health check
+curl http://localhost:8080/api/health
+
+# Create users
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice", "email": "alice@example.com"}'
+
+# List users
+curl http://localhost:8080/api/users
+```
+
+---
+
+## Dynamic Routes
+
+Demonstrates all dynamic routing patterns: parameters, catch-all, optional catch-all, and route groups.
+
+### Project Structure
+
+<FileTree>
+  <Folder name="dynamic-routes" defaultOpen>
+    <Folder name="app" defaultOpen>
+      <Folder name="api" defaultOpen>
+        <Folder name="users" defaultOpen>
+          <File name="route.go" />
+          <Folder name="[id]">
+            <File name="route.go" />
+          </Folder>
+        </Folder>
+        <Folder name="posts" defaultOpen>
+          <Folder name="[...slug]">
+            <File name="route.go" />
+          </Folder>
+        </Folder>
+        <Folder name="docs" defaultOpen>
+          <Folder name="[[...path]]">
+            <File name="route.go" />
+          </Folder>
+        </Folder>
+        <Folder name="(admin)" defaultOpen>
+          <Folder name="settings">
+            <File name="route.go" />
+          </Folder>
+          <Folder name="dashboard">
+            <File name="route.go" />
+          </Folder>
+        </Folder>
+      </Folder>
+    </Folder>
+    <File name="main.go" />
+  </Folder>
+</FileTree>
+
+### Dynamic Parameter `[id]`
+
+```go
+// app/api/users/[id]/route.go
+package users
+
+import (
+    "myapp/internal/store"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// GET /api/users/:id - Get a user by ID
+func Get(c *fuego.Context) error {
+    id := c.ParamInt("id", 0)
+    if id == 0 {
+        return c.JSON(400, map[string]string{"error": "invalid user id"})
+    }
+    
+    user, err := store.Default.Get(id)
+    if err != nil {
+        return c.JSON(404, map[string]string{"error": "user not found"})
+    }
+    
+    return c.JSON(200, user)
+}
+
+// PUT /api/users/:id - Update a user
+func Put(c *fuego.Context) error {
+    id := c.ParamInt("id", 0)
+    
+    var input struct {
+        Name  string `json:"name"`
+        Email string `json:"email"`
+    }
+    
+    if err := c.Bind(&input); err != nil {
+        return c.JSON(400, map[string]string{"error": "invalid request body"})
+    }
+    
+    user, err := store.Default.Update(id, input.Name, input.Email)
+    if err != nil {
+        return c.JSON(404, map[string]string{"error": "user not found"})
+    }
+    
+    return c.JSON(200, user)
+}
+
+// DELETE /api/users/:id - Delete a user
+func Delete(c *fuego.Context) error {
+    id := c.ParamInt("id", 0)
+    
+    if err := store.Default.Delete(id); err != nil {
+        return c.JSON(404, map[string]string{"error": "user not found"})
+    }
+    
+    return c.NoContent()
+}
+```
+
+### Catch-All Route `[...slug]`
+
+```go
+// app/api/posts/[...slug]/route.go
+package posts
+
+import (
+    "strings"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// GET /api/posts/* - Catch-all route for blog posts
+// Examples:
+//   /api/posts/2024/01/hello-world → slug = "2024/01/hello-world"
+//   /api/posts/tech/go/tips       → slug = "tech/go/tips"
+func Get(c *fuego.Context) error {
+    slug := c.Param("slug")
+    segments := c.ParamAll("slug") // Split by "/"
+    
+    return c.JSON(200, map[string]any{
+        "slug":     slug,
+        "segments": segments,
+        "depth":    len(segments),
+    })
+}
+```
+
+### Optional Catch-All `[[...path]]`
+
+```go
+// app/api/docs/[[...path]]/route.go
+package docs
+
+import (
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// Documentation structure
+var docs = map[string]string{
+    "":                    "Welcome to the API documentation",
+    "getting-started":     "Getting started guide",
+    "api/users":           "Users API reference",
+    "api/posts":           "Posts API reference",
+    "api/authentication":  "Authentication guide",
+}
+
+// GET /api/docs/[[...path]] - Optional catch-all for documentation
+// Matches:
+//   /api/docs                    → path = ""
+//   /api/docs/getting-started    → path = "getting-started"
+//   /api/docs/api/users          → path = "api/users"
+func Get(c *fuego.Context) error {
+    path := c.Param("path")
+    
+    content, ok := docs[path]
+    if !ok {
+        return c.JSON(404, map[string]string{
+            "error": "documentation not found",
+            "path":  path,
+        })
+    }
+    
+    return c.JSON(200, map[string]any{
+        "path":    path,
+        "content": content,
+        "sections": getDocSections(),
+    })
+}
+
+func getDocSections() []string {
+    sections := make([]string, 0, len(docs))
+    for k := range docs {
+        if k != "" {
+            sections = append(sections, k)
+        }
+    }
+    return sections
+}
+```
+
+### Route Groups `(group)`
+
+```go
+// app/api/(admin)/settings/route.go
+package settings
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+// GET /api/settings - The (admin) group doesn't affect the URL
+func Get(c *fuego.Context) error {
+    return c.JSON(200, map[string]any{
+        "theme":          "dark",
+        "notifications":  true,
+        "language":       "en",
+        "timezone":       "UTC",
+    })
+}
+
+// PUT /api/settings
+func Put(c *fuego.Context) error {
+    var settings map[string]any
+    if err := c.Bind(&settings); err != nil {
+        return c.JSON(400, map[string]string{"error": "invalid settings"})
+    }
+    
+    return c.JSON(200, map[string]any{
+        "message":  "settings updated",
+        "settings": settings,
+    })
+}
+```
+
+```go
+// app/api/(admin)/dashboard/route.go
+package dashboard
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+// GET /api/dashboard - Admin dashboard data
+func Get(c *fuego.Context) error {
+    return c.JSON(200, map[string]any{
+        "total_users":    1234,
+        "active_users":   567,
+        "total_posts":    890,
+        "recent_signups": 23,
+    })
+}
+```
+
+### Route Summary
+
+| Pattern | Example URL | Param Value |
+|---------|-------------|-------------|
+| `/api/users/:id` | `/api/users/42` | `id = "42"` |
+| `/api/posts/*` | `/api/posts/2024/01/title` | `slug = "2024/01/title"` |
+| `/api/docs/*?` | `/api/docs` | `path = ""` |
+| `/api/docs/*?` | `/api/docs/guide` | `path = "guide"` |
+| `/api/settings` | `/api/settings` | (group ignored) |
+
+---
+
+## Full-Stack Application
+
+A complete application with templ templates, HTMX for interactivity, and Tailwind CSS for styling.
+
+### Project Structure
+
+<FileTree>
+  <Folder name="fullstack" defaultOpen>
+    <Folder name="app" defaultOpen>
+      <File name="layout.templ" />
+      <File name="page.templ" />
+      <Folder name="dashboard">
+        <File name="page.templ" />
+      </Folder>
+      <Folder name="api" defaultOpen>
+        <Folder name="tasks">
+          <File name="route.go" />
+          <Folder name="toggle">
+            <File name="route.go" />
+          </Folder>
+        </Folder>
+      </Folder>
+    </Folder>
+    <Folder name="internal">
+      <Folder name="tasks">
+        <File name="store.go" />
+      </Folder>
+    </Folder>
+    <Folder name="styles">
+      <File name="input.css" />
+    </Folder>
+    <Folder name="static">
+      <Folder name="css">
+        <File name="output.css" />
+      </Folder>
+    </Folder>
+    <File name="main.go" />
+  </Folder>
+</FileTree>
+
+### Root Layout
+
+```go
+// app/layout.templ
+package app
+
+templ Layout(title string) {
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <title>{ title } - Fuego App</title>
+        <link rel="stylesheet" href="/static/css/output.css"/>
+        <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    </head>
+    <body class="bg-gray-100 min-h-screen">
+        <nav class="bg-white shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex">
+                        <a href="/" class="flex items-center px-2 text-xl font-bold text-orange-600">
+                            Fuego
+                        </a>
+                        <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+                            <a href="/" class="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-900">
+                                Home
+                            </a>
+                            <a href="/dashboard" class="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-700">
+                                Dashboard
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+        <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+            { children... }
+        </main>
+    </body>
+    </html>
+}
+```
+
+### Home Page
+
+```go
+// app/page.templ
+package app
+
+templ Page() {
+    <div class="px-4 py-5 sm:p-6">
+        <div class="text-center">
+            <h1 class="text-4xl font-bold text-gray-900 mb-4">
+                Welcome to Fuego
+            </h1>
+            <p class="text-xl text-gray-600 mb-8">
+                A file-system based Go framework with templ, Tailwind CSS, and HTMX
+            </p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
+                <div class="bg-white overflow-hidden shadow rounded-lg p-6">
+                    <h3 class="text-lg font-medium text-gray-900">File-Based Routing</h3>
+                    <p class="mt-2 text-sm text-gray-500">
+                        Just like Next.js - drop files in app/ and get routes automatically.
+                    </p>
+                </div>
+                
+                <div class="bg-white overflow-hidden shadow rounded-lg p-6">
+                    <h3 class="text-lg font-medium text-gray-900">HTMX Integration</h3>
+                    <p class="mt-2 text-sm text-gray-500">
+                        Build interactive UIs without writing JavaScript.
+                    </p>
+                </div>
+                
+                <div class="bg-white overflow-hidden shadow rounded-lg p-6">
+                    <h3 class="text-lg font-medium text-gray-900">Tailwind CSS</h3>
+                    <p class="mt-2 text-sm text-gray-500">
+                        Utility-first CSS with the standalone binary - no Node.js needed.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="mt-12">
+                <a 
+                    href="/dashboard" 
+                    class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700"
+                >
+                    Go to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+}
+```
+
+### Dashboard with HTMX
+
+```go
+// app/dashboard/page.templ
+package dashboard
+
+templ Page() {
+    <div class="px-4 py-5 sm:p-6">
+        <h1 class="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
+        
+        <div class="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Tasks</h2>
+            
+            <!-- HTMX-powered task list - loads on page load -->
+            <div id="task-list" hx-get="/api/tasks" hx-trigger="load" hx-swap="innerHTML">
+                <div class="text-gray-500">Loading tasks...</div>
+            </div>
+            
+            <!-- Add task form with HTMX -->
+            <form 
+                class="mt-6 flex gap-4"
+                hx-post="/api/tasks" 
+                hx-target="#task-list"
+                hx-swap="innerHTML"
+                hx-on::after-request="this.reset()"
+            >
+                <input 
+                    type="text" 
+                    name="title" 
+                    placeholder="New task..." 
+                    class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
+                    required
+                />
+                <button 
+                    type="submit"
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-orange-600 hover:bg-orange-700"
+                >
+                    Add Task
+                </button>
+            </form>
+        </div>
+    </div>
+}
+```
+
+### Task Store
+
+```go
+// internal/tasks/store.go
+package tasks
+
+import (
+    "fmt"
+    "sync"
+)
+
+type Task struct {
+    ID        int    `json:"id"`
+    Title     string `json:"title"`
+    Completed bool   `json:"completed"`
+}
+
+type TaskStore struct {
+    tasks  []Task
+    nextID int
+    mu     sync.RWMutex
+}
+
+var Default = &TaskStore{
+    tasks: []Task{
+        {ID: 1, Title: "Learn Fuego", Completed: true},
+        {ID: 2, Title: "Build an app", Completed: false},
+        {ID: 3, Title: "Deploy to production", Completed: false},
+    },
+    nextID: 4,
+}
+
+func (s *TaskStore) List() []Task {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    return s.tasks
+}
+
+func (s *TaskStore) Add(title string) Task {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    
+    task := Task{
+        ID:        s.nextID,
+        Title:     title,
+        Completed: false,
+    }
+    s.tasks = append(s.tasks, task)
+    s.nextID++
+    return task
+}
+
+func (s *TaskStore) Toggle(id int) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    
+    for i := range s.tasks {
+        if s.tasks[i].ID == id {
+            s.tasks[i].Completed = !s.tasks[i].Completed
+            break
+        }
+    }
+}
+
+func (s *TaskStore) Delete(id int) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    
+    for i := range s.tasks {
+        if s.tasks[i].ID == id {
+            s.tasks = append(s.tasks[:i], s.tasks[i+1:]...)
+            break
+        }
+    }
+}
+
+// RenderHTML returns the task list as HTML for HTMX.
+func (s *TaskStore) RenderHTML() string {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    
+    if len(s.tasks) == 0 {
+        return `<p class="text-gray-500">No tasks yet. Add one above!</p>`
+    }
+    
+    html := `<ul class="divide-y divide-gray-200">`
+    for _, task := range s.tasks {
+        checked := ""
+        textClass := "text-gray-900"
+        if task.Completed {
+            checked = "checked"
+            textClass = "text-gray-400 line-through"
+        }
+        
+        html += fmt.Sprintf(`
+            <li class="py-3 flex items-center justify-between">
+                <div class="flex items-center">
+                    <input 
+                        type="checkbox" 
+                        %s
+                        class="h-4 w-4 text-orange-600 rounded"
+                        hx-post="/api/tasks/toggle?id=%d"
+                        hx-target="#task-list"
+                        hx-swap="innerHTML"
+                    />
+                    <span class="ml-3 %s">%s</span>
+                </div>
+                <button 
+                    class="text-red-600 hover:text-red-800 text-sm"
+                    hx-delete="/api/tasks?id=%d"
+                    hx-target="#task-list"
+                    hx-swap="innerHTML"
+                    hx-confirm="Delete this task?"
+                >
+                    Delete
+                </button>
+            </li>
+        `, checked, task.ID, textClass, task.Title, task.ID)
+    }
+    html += `</ul>`
+    
+    return html
+}
+```
+
+### Task API Endpoints
+
+```go
+// app/api/tasks/route.go
+package tasks
+
+import (
+    "myapp/internal/tasks"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// GET /api/tasks - Returns task list as HTML for HTMX
+func Get(c *fuego.Context) error {
+    return c.HTML(200, tasks.Default.RenderHTML())
+}
+
+// POST /api/tasks - Add a new task
+func Post(c *fuego.Context) error {
+    title := c.FormValue("title")
+    if title == "" {
+        return c.HTML(400, `<p class="text-red-500">Task title is required</p>`)
+    }
+    
+    tasks.Default.Add(title)
+    return c.HTML(200, tasks.Default.RenderHTML())
+}
+
+// DELETE /api/tasks - Delete a task
+func Delete(c *fuego.Context) error {
+    id := c.QueryInt("id", 0)
+    if id == 0 {
+        return c.HTML(400, `<p class="text-red-500">Task ID is required</p>`)
+    }
+    
+    tasks.Default.Delete(id)
+    return c.HTML(200, tasks.Default.RenderHTML())
+}
+```
+
+```go
+// app/api/tasks/toggle/route.go
+package toggle
+
+import (
+    "myapp/internal/tasks"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// POST /api/tasks/toggle - Toggle task completion
+func Post(c *fuego.Context) error {
+    id := c.QueryInt("id", 0)
+    if id == 0 {
+        return c.HTML(400, `<p class="text-red-500">Task ID is required</p>`)
+    }
+    
+    tasks.Default.Toggle(id)
+    return c.HTML(200, tasks.Default.RenderHTML())
+}
+```
+
+### Tailwind CSS Setup
+
+```css
+/* styles/input.css */
+@import "tailwindcss";
+
+/* Custom components */
+.btn-primary {
+    @apply inline-flex items-center px-4 py-2 border border-transparent 
+           text-sm font-medium rounded-md shadow-sm text-white 
+           bg-orange-600 hover:bg-orange-700 focus:outline-none 
+           focus:ring-2 focus:ring-offset-2 focus:ring-orange-500;
+}
+
+.btn-secondary {
+    @apply inline-flex items-center px-4 py-2 border border-gray-300 
+           text-sm font-medium rounded-md shadow-sm text-gray-700 
+           bg-white hover:bg-gray-50;
+}
+
+.input {
+    @apply block w-full rounded-md border-gray-300 shadow-sm 
+           focus:border-orange-500 focus:ring-orange-500 sm:text-sm;
+}
+```
+
+Build Tailwind:
+
+```bash
+fuego tailwind build  # For production (minified)
+fuego tailwind watch  # For development
+```
+
+---
+
+## Middleware Patterns
+
+Comprehensive middleware examples for logging, timing, authentication, and more.
+
+### Project Structure
+
+<FileTree>
+  <Folder name="middleware-example" defaultOpen>
+    <Folder name="app" defaultOpen>
+      <File name="middleware.go" />
+      <Folder name="api" defaultOpen>
+        <File name="middleware.go" />
+        <Folder name="public">
+          <File name="route.go" />
+        </Folder>
+        <Folder name="protected" defaultOpen>
+          <File name="middleware.go" />
+          <File name="route.go" />
+        </Folder>
+        <Folder name="admin" defaultOpen>
+          <File name="middleware.go" />
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+    <Folder name="internal">
+      <Folder name="auth">
+        <File name="middleware.go" />
+      </Folder>
+    </Folder>
+    <File name="main.go" />
+  </Folder>
+</FileTree>
+
+### Global Middleware (App Level)
+
+```go
+// app/middleware.go
+package app
+
+import (
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// Middleware applies to ALL routes in the app.
+func Middleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            // Add security headers to all responses
+            c.SetHeader("X-Content-Type-Options", "nosniff")
+            c.SetHeader("X-Frame-Options", "DENY")
+            c.SetHeader("X-XSS-Protection", "1; mode=block")
+            
+            return next(c)
+        }
+    }
+}
+```
+
+### API Middleware
+
+```go
+// app/api/middleware.go
+package api
+
+import (
+    "time"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// Middleware applies to all routes under /api/*.
+func Middleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            // Add API version header
+            c.SetHeader("X-API-Version", "1.0.0")
+            
+            // Track response time
+            start := time.Now()
+            err := next(c)
+            c.SetHeader("X-Response-Time", time.Since(start).String())
+            
+            return err
+        }
+    }
+}
+```
+
+### Authentication Middleware
+
+```go
+// internal/auth/middleware.go
+package auth
+
+import (
+    "fmt"
+    "strings"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// JWTMiddleware validates Bearer tokens.
+func JWTMiddleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            authHeader := c.Header("Authorization")
+            if authHeader == "" {
+                return c.JSON(401, map[string]any{
+                    "error":   "unauthorized",
+                    "message": "Authorization header required",
+                })
+            }
+            
+            parts := strings.SplitN(authHeader, " ", 2)
+            if len(parts) != 2 || parts[0] != "Bearer" {
+                return c.JSON(401, map[string]any{
+                    "error":   "unauthorized",
+                    "message": "Invalid authorization format. Use: Bearer <token>",
+                })
+            }
+            
+            token := parts[1]
+            
+            // Validate token (replace with real JWT validation)
+            claims, err := validateToken(token)
+            if err != nil {
+                return c.JSON(401, map[string]any{
+                    "error":   "unauthorized",
+                    "message": "Invalid or expired token",
+                })
+            }
+            
+            // Store user info in context
+            c.Set("user_id", claims.UserID)
+            c.Set("user_email", claims.Email)
+            c.Set("user_role", claims.Role)
+            
+            return next(c)
+        }
+    }
+}
+
+// RequireRole creates middleware that checks for specific roles.
+func RequireRole(roles ...string) fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            userRole := c.GetString("user_role")
+            
+            for _, role := range roles {
+                if userRole == role {
+                    return next(c)
+                }
+            }
+            
+            return c.JSON(403, map[string]any{
+                "error":   "forbidden",
+                "message": "Insufficient permissions",
+            })
+        }
+    }
+}
+
+// Simple token validation (replace with real JWT library)
+type Claims struct {
+    UserID string
+    Email  string
+    Role   string
+}
+
+func validateToken(token string) (*Claims, error) {
+    // In production, use github.com/golang-jwt/jwt/v5
+    if token == "valid-user-token" {
+        return &Claims{UserID: "123", Email: "user@example.com", Role: "user"}, nil
+    }
+    if token == "valid-admin-token" {
+        return &Claims{UserID: "1", Email: "admin@example.com", Role: "admin"}, nil
+    }
+    return nil, fmt.Errorf("invalid token")
+}
+```
+
+### Protected Route Middleware
+
+```go
+// app/api/protected/middleware.go
+package protected
+
+import (
+    "myapp/internal/auth"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// Middleware requires authentication for all protected routes.
+func Middleware() fuego.MiddlewareFunc {
+    return auth.JWTMiddleware()
+}
+```
+
+```go
+// app/api/protected/route.go
+package protected
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+// GET /api/protected - Returns user profile
+func Get(c *fuego.Context) error {
+    return c.JSON(200, map[string]any{
+        "user_id": c.GetString("user_id"),
+        "email":   c.GetString("user_email"),
+        "role":    c.GetString("user_role"),
+        "message": "You have access to protected resources",
+    })
+}
+```
+
+### Admin Route Middleware (Chained)
+
+```go
+// app/api/admin/middleware.go
+package admin
+
+import "myapp/internal/auth"
+
+// Middleware chains JWT auth + admin role requirement.
+func Middleware() fuego.MiddlewareFunc {
+    jwtMiddleware := auth.JWTMiddleware()
+    adminMiddleware := auth.RequireRole("admin")
+    
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        // Chain: JWT validation → Role check → Handler
+        return jwtMiddleware(adminMiddleware(next))
+    }
+}
+```
+
+```go
+// app/api/admin/route.go
+package admin
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+// GET /api/admin - Admin-only endpoint
+func Get(c *fuego.Context) error {
+    return c.JSON(200, map[string]any{
+        "message": "Welcome, admin!",
+        "admin_data": map[string]any{
+            "total_users":   1234,
+            "total_revenue": 56789.00,
+            "active_sessions": 42,
+        },
+    })
+}
+```
+
+### Testing Middleware
+
+```bash
+# Public route - no auth needed
+curl http://localhost:8080/api/public
+
+# Protected route - requires valid token
+curl http://localhost:8080/api/protected \
+  -H "Authorization: Bearer valid-user-token"
+
+# Admin route - requires admin role
+curl http://localhost:8080/api/admin \
+  -H "Authorization: Bearer valid-admin-token"
+
+# Unauthorized request
+curl http://localhost:8080/api/protected
+# Returns: {"error":"unauthorized","message":"Authorization header required"}
+
+# Forbidden request (user trying admin route)
+curl http://localhost:8080/api/admin \
+  -H "Authorization: Bearer valid-user-token"
+# Returns: {"error":"forbidden","message":"Insufficient permissions"}
+```
+
+---
+
+## Proxy Patterns
+
+Request interception patterns for URL rewriting, authentication, rate limiting, and maintenance mode.
+
+### Project Structure
+
+<FileTree>
+  <Folder name="proxy-example" defaultOpen>
+    <Folder name="app" defaultOpen>
+      <File name="proxy.go" />
+      <Folder name="api" defaultOpen>
+        <Folder name="users">
+          <File name="route.go" />
+        </Folder>
+        <Folder name="admin">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+    <File name="main.go" />
+  </Folder>
+</FileTree>
+
+### Complete Proxy Example
+
+```go
+// app/proxy.go
+package app
+
+import (
+    "fmt"
+    "strings"
+    "sync"
+    "time"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// ProxyConfig limits which paths run through the proxy
+var ProxyConfig = &fuego.ProxyConfig{
+    Matcher: []string{
+        "/api/:path*",    // All API routes
+        "/v1/:path*",     // Legacy API routes
+        "/admin/:path*",  // Admin routes
+    },
+}
+
+// Rate limiter (simple in-memory implementation)
+var rateLimiter = newRateLimiter(100, time.Minute)
+
+// Proxy handles request interception before routing.
+func Proxy(c *fuego.Context) (*fuego.ProxyResult, error) {
+    path := c.Path()
+    
+    // 1. Maintenance Mode
+    if isMaintenanceMode() && !strings.HasPrefix(path, "/api/health") {
+        return fuego.ResponseHTML(503, `
+            <!DOCTYPE html>
+            <html>
+            <head><title>Maintenance</title></head>
+            <body>
+                <h1>We'll be back soon!</h1>
+                <p>The site is undergoing scheduled maintenance.</p>
+            </body>
+            </html>
+        `).WithHeader("Retry-After", "3600"), nil
+    }
+    
+    // 2. Rate Limiting
+    clientIP := c.ClientIP()
+    if !rateLimiter.Allow(clientIP) {
+        return fuego.ResponseJSON(429, `{
+            "error": "too_many_requests",
+            "message": "Rate limit exceeded. Please try again later.",
+            "retry_after": 60
+        }`).WithHeader("Retry-After", "60"), nil
+    }
+    
+    // 3. Legacy URL Rewriting: /v1/* -> /api/*
+    if strings.HasPrefix(path, "/v1/") {
+        newPath := strings.Replace(path, "/v1/", "/api/", 1)
+        return fuego.Rewrite(newPath).
+            WithHeader("X-Deprecated", "true").
+            WithHeader("X-Migrate-To", newPath), nil
+    }
+    
+    // 4. Access Control for Admin Routes
+    if strings.HasPrefix(path, "/admin") || strings.HasPrefix(path, "/api/admin") {
+        authHeader := c.Header("Authorization")
+        if authHeader == "" {
+            return fuego.ResponseJSON(401, `{
+                "error": "unauthorized",
+                "message": "Authentication required"
+            }`), nil
+        }
+        
+        // Simple token check (use real JWT validation in production)
+        if !strings.HasPrefix(authHeader, "Bearer admin-") {
+            return fuego.ResponseJSON(403, `{
+                "error": "forbidden",
+                "message": "Admin access required"
+            }`), nil
+        }
+    }
+    
+    // 5. Add tracking headers
+    return fuego.Continue().
+        WithHeader("X-Request-ID", generateRequestID()).
+        WithHeader("X-Proxy-Time", time.Now().Format(time.RFC3339)), nil
+}
+
+// ---------- Helper Functions ----------
+
+var maintenanceMode bool
+
+func isMaintenanceMode() bool {
+    return maintenanceMode
+}
+
+func generateRequestID() string {
+    return fmt.Sprintf("req_%d", time.Now().UnixNano())
+}
+
+// Simple rate limiter
+type simpleLimiter struct {
+    requests map[string][]time.Time
+    limit    int
+    window   time.Duration
+    mu       sync.Mutex
+}
+
+func newRateLimiter(limit int, window time.Duration) *simpleLimiter {
+    return &simpleLimiter{
+        requests: make(map[string][]time.Time),
+        limit:    limit,
+        window:   window,
+    }
+}
+
+func (l *simpleLimiter) Allow(key string) bool {
+    l.mu.Lock()
+    defer l.mu.Unlock()
+    
+    now := time.Now()
+    cutoff := now.Add(-l.window)
+    
+    // Clean old requests
+    var valid []time.Time
+    for _, t := range l.requests[key] {
+        if t.After(cutoff) {
+            valid = append(valid, t)
+        }
+    }
+    
+    if len(valid) >= l.limit {
+        return false
+    }
+    
+    l.requests[key] = append(valid, now)
+    return true
+}
+```
+
+### A/B Testing with Proxy
+
+```go
+// app/proxy.go
+func Proxy(c *fuego.Context) (*fuego.ProxyResult, error) {
+    path := c.Path()
+    
+    // A/B testing for pricing page
+    if path == "/pricing" {
+        variant := c.Cookie("ab_variant")
+        
+        // Assign variant if not set
+        if variant == "" {
+            if time.Now().UnixNano()%2 == 0 {
+                variant = "A"
+            } else {
+                variant = "B"
+            }
+        }
+        
+        if variant == "B" {
+            return fuego.Rewrite("/pricing-new").
+                WithHeader("X-AB-Variant", "B"), nil
+        }
+        
+        return fuego.Continue().
+            WithHeader("X-AB-Variant", "A"), nil
+    }
+    
+    return fuego.Continue(), nil
+}
+```
+
+### Geolocation Routing
+
+```go
+// app/proxy.go
+func Proxy(c *fuego.Context) (*fuego.ProxyResult, error) {
+    // Get country from Cloudflare/CDN header
+    country := c.Header("CF-IPCountry")
+    if country == "" {
+        country = c.Header("X-Country-Code")
+    }
+    
+    path := c.Path()
+    
+    // Route EU users to GDPR-compliant endpoints
+    if isEUCountry(country) && strings.HasPrefix(path, "/api/") {
+        return fuego.Rewrite("/api/eu" + strings.TrimPrefix(path, "/api")).
+            WithHeader("X-Region", "EU"), nil
+    }
+    
+    // Redirect to localized homepage
+    if path == "/" {
+        switch country {
+        case "DE":
+            return fuego.Redirect("/de", 302), nil
+        case "FR":
+            return fuego.Redirect("/fr", 302), nil
+        case "ES":
+            return fuego.Redirect("/es", 302), nil
+        }
+    }
+    
+    return fuego.Continue(), nil
+}
+
+func isEUCountry(code string) bool {
+    euCountries := map[string]bool{
+        "AT": true, "BE": true, "BG": true, "CY": true, "CZ": true,
+        "DE": true, "DK": true, "EE": true, "ES": true, "FI": true,
+        "FR": true, "GR": true, "HR": true, "HU": true, "IE": true,
+        "IT": true, "LT": true, "LU": true, "LV": true, "MT": true,
+        "NL": true, "PL": true, "PT": true, "RO": true, "SE": true,
+        "SI": true, "SK": true,
+    }
+    return euCountries[code]
+}
+```
+
+### Testing Proxy
+
+```bash
+# Normal request
+curl http://localhost:8080/api/users
+# Response headers include X-Request-ID, X-Proxy-Time
+
+# Legacy URL (gets rewritten)
+curl http://localhost:8080/v1/users
+# Response headers include X-Deprecated: true
+
+# Admin route without auth
+curl http://localhost:8080/api/admin
+# Returns: 401 Unauthorized
+
+# Admin route with auth
+curl http://localhost:8080/api/admin \
+  -H "Authorization: Bearer admin-secret"
+# Returns: 200 OK
+
+# Rate limiting (run 101+ times quickly)
+for i in {1..105}; do curl -s http://localhost:8080/api/users; done
+# After 100 requests: 429 Too Many Requests
+```
+
+---
+
+## Best Practices Summary
+
+<AccordionGroup>
+  <Accordion title="Project Organization">
+    - Use `internal/` for non-exported packages
+    - Use repository pattern for database access
+    - Keep route handlers thin - delegate to services
+    - Use route groups to organize related routes
+  </Accordion>
+  <Accordion title="Error Handling">
+    - Return proper HTTP status codes
+    - Include error messages in responses
+    - Use `fuego.BadRequest()`, `fuego.Unauthorized()`, etc.
+    - Log errors server-side, return safe messages to clients
+  </Accordion>
+  <Accordion title="Middleware">
+    - Global middleware for cross-cutting concerns
+    - Route-level middleware for specific paths
+    - Chain middleware for complex requirements
+    - Keep middleware focused and composable
+  </Accordion>
+  <Accordion title="Proxy">
+    - Use proxy for pre-routing decisions
+    - Keep proxy logic fast (no database queries)
+    - Use matchers to limit which paths need proxy
+    - Return explicit responses instead of errors
+  </Accordion>
+  <Accordion title="HTMX Integration">
+    - Return HTML fragments for HTMX requests
+    - Use `c.IsHTMX()` to detect HTMX requests
+    - Set `HX-Redirect` header for redirects
+    - Keep HTMX responses small and focused
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="File-Based Routing" icon="folder-tree" href="/docs/routing/file-based">
+    Learn all routing patterns in depth
+  </Card>
+  <Card title="Middleware" icon="layer-group" href="/docs/middleware/overview">
+    Complete middleware documentation
+  </Card>
+  <Card title="Proxy" icon="shield" href="/docs/middleware/proxy">
+    Advanced proxy patterns
+  </Card>
+  <Card title="Authentication" icon="lock" href="/docs/guides/authentication">
+    Complete auth implementation
+  </Card>
+  <Card title="Database" icon="database" href="/docs/guides/database">
+    Database integration guide
+  </Card>
+  <Card title="Context API" icon="code" href="/docs/api/context">
+    Full Context reference
+  </Card>
+</CardGroup>

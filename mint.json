@@ -61,19 +61,42 @@
       "pages": [
         "docs/routing/file-based",
         "docs/middleware/overview",
-        "docs/middleware/proxy"
+        "docs/middleware/proxy",
+        "docs/core-concepts/templates",
+        "docs/core-concepts/static-files"
+      ]
+    },
+    {
+      "group": "Frontend",
+      "pages": [
+        "docs/frontend/htmx",
+        "docs/frontend/tailwind",
+        "docs/frontend/forms"
+      ]
+    },
+    {
+      "group": "Advanced",
+      "pages": [
+        "docs/advanced/error-handling",
+        "docs/advanced/testing",
+        "docs/advanced/configuration",
+        "docs/advanced/performance"
       ]
     },
     {
       "group": "Guides",
       "pages": [
+        "docs/guides/examples",
+        "docs/guides/authentication",
+        "docs/guides/database",
         "docs/guides/deployment"
       ]
     },
     {
       "group": "API Reference",
       "pages": [
-        "docs/api/context"
+        "docs/api/context",
+        "docs/reference/cli"
       ]
     }
   ],

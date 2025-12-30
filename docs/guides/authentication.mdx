@@ -1,0 +1,826 @@
+---
+title: Authentication
+description: 'Secure your Fuego applications with JWT tokens, sessions, API keys, and middleware-based auth patterns.'
+---
+
+Authentication is a critical component of any web application. Fuego provides flexible patterns for implementing authentication using middleware, the proxy layer, and the Context API.
+
+## Authentication Strategies
+
+<CardGroup cols={2}>
+  <Card title="JWT Tokens" icon="key">
+    Stateless authentication with JSON Web Tokens
+  </Card>
+  <Card title="Session-Based" icon="cookie">
+    Server-side sessions with secure cookies
+  </Card>
+  <Card title="API Keys" icon="lock">
+    Simple key-based authentication for APIs
+  </Card>
+  <Card title="OAuth/OIDC" icon="users">
+    Third-party authentication providers
+  </Card>
+</CardGroup>
+
+## JWT Authentication
+
+JSON Web Tokens are the most common authentication method for APIs. Here's a complete implementation:
+
+### JWT Middleware
+
+Create a reusable JWT middleware:
+
+```go
+// internal/auth/jwt.go
+package auth
+
+import (
+    "errors"
+    "strings"
+    "time"
+    
+    "github.com/golang-jwt/jwt/v5"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+var jwtSecret = []byte("your-secret-key") // Use environment variable in production
+
+// Claims represents the JWT claims structure.
+type Claims struct {
+    UserID string `json:"user_id"`
+    Email  string `json:"email"`
+    Role   string `json:"role"`
+    jwt.RegisteredClaims
+}
+
+// GenerateToken creates a new JWT token for a user.
+func GenerateToken(userID, email, role string) (string, error) {
+    claims := &Claims{
+        UserID: userID,
+        Email:  email,
+        Role:   role,
+        RegisteredClaims: jwt.RegisteredClaims{
+            ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+            IssuedAt:  jwt.NewNumericDate(time.Now()),
+            Issuer:    "fuego-app",
+        },
+    }
+    
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    return token.SignedString(jwtSecret)
+}
+
+// ValidateToken parses and validates a JWT token.
+func ValidateToken(tokenString string) (*Claims, error) {
+    token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+        if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+            return nil, errors.New("unexpected signing method")
+        }
+        return jwtSecret, nil
+    })
+    
+    if err != nil {
+        return nil, err
+    }
+    
+    if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+        return claims, nil
+    }
+    
+    return nil, errors.New("invalid token")
+}
+
+// JWTMiddleware validates JWT tokens and adds user info to context.
+func JWTMiddleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            authHeader := c.Header("Authorization")
+            if authHeader == "" {
+                return c.JSON(401, map[string]any{
+                    "error": "missing authorization header",
+                })
+            }
+            
+            // Extract Bearer token
+            parts := strings.SplitN(authHeader, " ", 2)
+            if len(parts) != 2 || parts[0] != "Bearer" {
+                return c.JSON(401, map[string]any{
+                    "error": "invalid authorization format",
+                })
+            }
+            
+            claims, err := ValidateToken(parts[1])
+            if err != nil {
+                return c.JSON(401, map[string]any{
+                    "error": "invalid token",
+                })
+            }
+            
+            // Store user info in context
+            c.Set("user_id", claims.UserID)
+            c.Set("user_email", claims.Email)
+            c.Set("user_role", claims.Role)
+            c.Set("claims", claims)
+            
+            return next(c)
+        }
+    }
+}
+```
+
+### Protected Routes with JWT
+
+Apply the middleware to protected routes:
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="api" defaultOpen>
+      <Folder name="auth">
+        <File name="route.go" />
+      </Folder>
+      <Folder name="protected" defaultOpen>
+        <File name="middleware.go" />
+        <Folder name="profile">
+          <File name="route.go" />
+        </Folder>
+        <Folder name="settings">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+```go
+// app/api/protected/middleware.go
+package protected
+
+import "myapp/internal/auth"
+
+// Middleware applies JWT authentication to all routes under /api/protected
+func Middleware() fuego.MiddlewareFunc {
+    return auth.JWTMiddleware()
+}
+```
+
+```go
+// app/api/protected/profile/route.go
+package profile
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+// GET /api/protected/profile
+func Get(c *fuego.Context) error {
+    // User info is available from the JWT middleware
+    userID := c.GetString("user_id")
+    email := c.GetString("user_email")
+    role := c.GetString("user_role")
+    
+    return c.JSON(200, map[string]any{
+        "user_id": userID,
+        "email":   email,
+        "role":    role,
+    })
+}
+```
+
+### Login Endpoint
+
+```go
+// app/api/auth/route.go
+package auth
+
+import (
+    "myapp/internal/auth"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+type LoginRequest struct {
+    Email    string `json:"email"`
+    Password string `json:"password"`
+}
+
+type LoginResponse struct {
+    Token     string `json:"token"`
+    ExpiresIn int    `json:"expires_in"`
+}
+
+// POST /api/auth - Login and get JWT token
+func Post(c *fuego.Context) error {
+    var req LoginRequest
+    if err := c.Bind(&req); err != nil {
+        return c.JSON(400, map[string]string{"error": "invalid request body"})
+    }
+    
+    // Validate credentials (replace with your user lookup)
+    user, err := validateCredentials(req.Email, req.Password)
+    if err != nil {
+        return c.JSON(401, map[string]string{"error": "invalid credentials"})
+    }
+    
+    // Generate JWT token
+    token, err := auth.GenerateToken(user.ID, user.Email, user.Role)
+    if err != nil {
+        return c.JSON(500, map[string]string{"error": "failed to generate token"})
+    }
+    
+    return c.JSON(200, LoginResponse{
+        Token:     token,
+        ExpiresIn: 86400, // 24 hours
+    })
+}
+```
+
+## Session-Based Authentication
+
+For traditional web applications, session-based auth with cookies provides a better user experience:
+
+```go
+// internal/auth/session.go
+package auth
+
+import (
+    "crypto/rand"
+    "encoding/hex"
+    "sync"
+    "time"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// Session represents a user session.
+type Session struct {
+    ID        string
+    UserID    string
+    Email     string
+    Role      string
+    ExpiresAt time.Time
+}
+
+// SessionStore is a simple in-memory session store.
+// In production, use Redis or a database.
+type SessionStore struct {
+    sessions map[string]*Session
+    mu       sync.RWMutex
+}
+
+var Store = &SessionStore{
+    sessions: make(map[string]*Session),
+}
+
+// Create creates a new session.
+func (s *SessionStore) Create(userID, email, role string) (*Session, error) {
+    // Generate random session ID
+    bytes := make([]byte, 32)
+    if _, err := rand.Read(bytes); err != nil {
+        return nil, err
+    }
+    sessionID := hex.EncodeToString(bytes)
+    
+    session := &Session{
+        ID:        sessionID,
+        UserID:    userID,
+        Email:     email,
+        Role:      role,
+        ExpiresAt: time.Now().Add(24 * time.Hour),
+    }
+    
+    s.mu.Lock()
+    s.sessions[sessionID] = session
+    s.mu.Unlock()
+    
+    return session, nil
+}
+
+// Get retrieves a session by ID.
+func (s *SessionStore) Get(sessionID string) (*Session, bool) {
+    s.mu.RLock()
+    session, ok := s.sessions[sessionID]
+    s.mu.RUnlock()
+    
+    if !ok || time.Now().After(session.ExpiresAt) {
+        return nil, false
+    }
+    
+    return session, true
+}
+
+// Delete removes a session.
+func (s *SessionStore) Delete(sessionID string) {
+    s.mu.Lock()
+    delete(s.sessions, sessionID)
+    s.mu.Unlock()
+}
+
+// SessionMiddleware validates session cookies.
+func SessionMiddleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            sessionID := c.Cookie("session_id")
+            if sessionID == "" {
+                return c.Redirect("/login", 302)
+            }
+            
+            session, ok := Store.Get(sessionID)
+            if !ok {
+                // Clear invalid cookie
+                c.SetCookie(&http.Cookie{
+                    Name:     "session_id",
+                    Value:    "",
+                    Path:     "/",
+                    MaxAge:   -1,
+                    HttpOnly: true,
+                    Secure:   true,
+                    SameSite: http.SameSiteLaxMode,
+                })
+                return c.Redirect("/login", 302)
+            }
+            
+            // Store session info in context
+            c.Set("session", session)
+            c.Set("user_id", session.UserID)
+            c.Set("user_email", session.Email)
+            c.Set("user_role", session.Role)
+            
+            return next(c)
+        }
+    }
+}
+```
+
+### Login with Sessions
+
+```go
+// app/api/auth/login/route.go
+package login
+
+import (
+    "net/http"
+    
+    "myapp/internal/auth"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// POST /api/auth/login
+func Post(c *fuego.Context) error {
+    email := c.FormValue("email")
+    password := c.FormValue("password")
+    
+    // Validate credentials
+    user, err := validateCredentials(email, password)
+    if err != nil {
+        return c.JSON(401, map[string]string{"error": "invalid credentials"})
+    }
+    
+    // Create session
+    session, err := auth.Store.Create(user.ID, user.Email, user.Role)
+    if err != nil {
+        return c.JSON(500, map[string]string{"error": "failed to create session"})
+    }
+    
+    // Set secure cookie
+    c.SetCookie(&http.Cookie{
+        Name:     "session_id",
+        Value:    session.ID,
+        Path:     "/",
+        MaxAge:   86400, // 24 hours
+        HttpOnly: true,
+        Secure:   true,
+        SameSite: http.SameSiteLaxMode,
+    })
+    
+    // Redirect to dashboard for HTMX requests, JSON for API
+    if c.IsHTMX() {
+        c.SetHeader("HX-Redirect", "/dashboard")
+        return c.NoContent()
+    }
+    
+    return c.JSON(200, map[string]string{"message": "logged in"})
+}
+```
+
+## API Key Authentication
+
+For service-to-service communication or simple API access:
+
+```go
+// internal/auth/apikey.go
+package auth
+
+import (
+    "crypto/subtle"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// API keys - in production, store in database or secrets manager
+var validAPIKeys = map[string]string{
+    "key_live_abc123": "service-a",
+    "key_live_def456": "service-b",
+}
+
+// APIKeyMiddleware validates API keys from the X-API-Key header.
+func APIKeyMiddleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            apiKey := c.Header("X-API-Key")
+            if apiKey == "" {
+                return c.JSON(401, map[string]string{
+                    "error": "missing API key",
+                })
+            }
+            
+            // Constant-time comparison to prevent timing attacks
+            serviceName, valid := validateAPIKey(apiKey)
+            if !valid {
+                return c.JSON(401, map[string]string{
+                    "error": "invalid API key",
+                })
+            }
+            
+            c.Set("service_name", serviceName)
+            return next(c)
+        }
+    }
+}
+
+func validateAPIKey(key string) (string, bool) {
+    for validKey, serviceName := range validAPIKeys {
+        if subtle.ConstantTimeCompare([]byte(key), []byte(validKey)) == 1 {
+            return serviceName, true
+        }
+    }
+    return "", false
+}
+```
+
+## Proxy-Level Authentication
+
+For global authentication that runs before routing, use the proxy layer:
+
+```go
+// app/proxy.go
+package app
+
+import (
+    "strings"
+    
+    "myapp/internal/auth"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// ProxyConfig limits which paths run through the proxy
+var ProxyConfig = &fuego.ProxyConfig{
+    Matcher: []string{
+        "/api/:path*",      // All API routes
+        "/dashboard/:path*", // Dashboard routes
+    },
+}
+
+// Proxy handles authentication before routing.
+func Proxy(c *fuego.Context) (*fuego.ProxyResult, error) {
+    path := c.Path()
+    
+    // Skip auth for public routes
+    publicPaths := []string{"/api/auth", "/api/health", "/login", "/signup"}
+    for _, public := range publicPaths {
+        if strings.HasPrefix(path, public) {
+            return fuego.Continue(), nil
+        }
+    }
+    
+    // Check for session cookie (web) or Bearer token (API)
+    sessionID := c.Cookie("session_id")
+    authHeader := c.Header("Authorization")
+    
+    if sessionID != "" {
+        // Validate session
+        if _, ok := auth.Store.Get(sessionID); ok {
+            return fuego.Continue(), nil
+        }
+    }
+    
+    if strings.HasPrefix(authHeader, "Bearer ") {
+        // Validate JWT
+        token := strings.TrimPrefix(authHeader, "Bearer ")
+        if _, err := auth.ValidateToken(token); err == nil {
+            return fuego.Continue(), nil
+        }
+    }
+    
+    // Not authenticated - redirect web requests, 401 for API
+    if strings.HasPrefix(path, "/api/") {
+        return fuego.ResponseJSON(401, `{"error":"unauthorized"}`), nil
+    }
+    
+    return fuego.Redirect("/login", 302), nil
+}
+```
+
+## Role-Based Access Control (RBAC)
+
+Implement role-based permissions:
+
+```go
+// internal/auth/rbac.go
+package auth
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+// Role represents a user role.
+type Role string
+
+const (
+    RoleUser  Role = "user"
+    RoleAdmin Role = "admin"
+    RoleSuper Role = "super"
+)
+
+// RequireRole creates middleware that checks for specific roles.
+func RequireRole(roles ...Role) fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            userRole := Role(c.GetString("user_role"))
+            
+            for _, role := range roles {
+                if userRole == role {
+                    return next(c)
+                }
+            }
+            
+            return c.JSON(403, map[string]string{
+                "error": "insufficient permissions",
+            })
+        }
+    }
+}
+
+// RequireAdmin is a shorthand for requiring admin role.
+func RequireAdmin() fuego.MiddlewareFunc {
+    return RequireRole(RoleAdmin, RoleSuper)
+}
+```
+
+### Using RBAC in Routes
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="api" defaultOpen>
+      <Folder name="admin" defaultOpen>
+        <File name="middleware.go" />
+        <Folder name="users">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+```go
+// app/api/admin/middleware.go
+package admin
+
+import "myapp/internal/auth"
+
+// Middleware requires admin role for all routes under /api/admin
+func Middleware() fuego.MiddlewareFunc {
+    // Chain JWT auth + admin role requirement
+    jwtMiddleware := auth.JWTMiddleware()
+    adminMiddleware := auth.RequireAdmin()
+    
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return jwtMiddleware(adminMiddleware(next))
+    }
+}
+```
+
+## OAuth 2.0 / OIDC
+
+For third-party authentication (Google, GitHub, etc.):
+
+```go
+// internal/auth/oauth.go
+package auth
+
+import (
+    "context"
+    "encoding/json"
+    "net/http"
+    
+    "golang.org/x/oauth2"
+    "golang.org/x/oauth2/google"
+)
+
+var googleOAuthConfig = &oauth2.Config{
+    ClientID:     "your-client-id",
+    ClientSecret: "your-client-secret",
+    RedirectURL:  "http://localhost:8080/api/auth/google/callback",
+    Scopes:       []string{"email", "profile"},
+    Endpoint:     google.Endpoint,
+}
+
+// GetGoogleAuthURL returns the OAuth authorization URL.
+func GetGoogleAuthURL(state string) string {
+    return googleOAuthConfig.AuthCodeURL(state)
+}
+
+// ExchangeGoogleCode exchanges the auth code for user info.
+func ExchangeGoogleCode(ctx context.Context, code string) (*GoogleUser, error) {
+    token, err := googleOAuthConfig.Exchange(ctx, code)
+    if err != nil {
+        return nil, err
+    }
+    
+    client := googleOAuthConfig.Client(ctx, token)
+    resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+    
+    var user GoogleUser
+    if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+        return nil, err
+    }
+    
+    return &user, nil
+}
+
+type GoogleUser struct {
+    ID      string `json:"id"`
+    Email   string `json:"email"`
+    Name    string `json:"name"`
+    Picture string `json:"picture"`
+}
+```
+
+```go
+// app/api/auth/google/route.go
+package google
+
+import (
+    "crypto/rand"
+    "encoding/hex"
+    
+    "myapp/internal/auth"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// GET /api/auth/google - Redirect to Google OAuth
+func Get(c *fuego.Context) error {
+    // Generate state for CSRF protection
+    bytes := make([]byte, 16)
+    rand.Read(bytes)
+    state := hex.EncodeToString(bytes)
+    
+    // Store state in cookie
+    c.SetCookie(&http.Cookie{
+        Name:     "oauth_state",
+        Value:    state,
+        Path:     "/",
+        MaxAge:   300, // 5 minutes
+        HttpOnly: true,
+        Secure:   true,
+    })
+    
+    return c.Redirect(auth.GetGoogleAuthURL(state), 302)
+}
+```
+
+```go
+// app/api/auth/google/callback/route.go
+package callback
+
+import (
+    "myapp/internal/auth"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// GET /api/auth/google/callback - Handle OAuth callback
+func Get(c *fuego.Context) error {
+    // Verify state
+    storedState := c.Cookie("oauth_state")
+    receivedState := c.Query("state")
+    if storedState == "" || storedState != receivedState {
+        return c.JSON(400, map[string]string{"error": "invalid state"})
+    }
+    
+    // Exchange code for user info
+    code := c.Query("code")
+    googleUser, err := auth.ExchangeGoogleCode(c.Context(), code)
+    if err != nil {
+        return c.JSON(500, map[string]string{"error": "failed to authenticate"})
+    }
+    
+    // Find or create user in your database
+    user, err := findOrCreateUser(googleUser)
+    if err != nil {
+        return c.JSON(500, map[string]string{"error": "failed to create user"})
+    }
+    
+    // Create session
+    session, err := auth.Store.Create(user.ID, user.Email, user.Role)
+    if err != nil {
+        return c.JSON(500, map[string]string{"error": "failed to create session"})
+    }
+    
+    // Set session cookie
+    c.SetCookie(&http.Cookie{
+        Name:     "session_id",
+        Value:    session.ID,
+        Path:     "/",
+        MaxAge:   86400,
+        HttpOnly: true,
+        Secure:   true,
+    })
+    
+    return c.Redirect("/dashboard", 302)
+}
+```
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use HTTPS in Production">
+    Always use HTTPS for production deployments. Set `Secure: true` on cookies and never transmit credentials over HTTP.
+  </Accordion>
+  <Accordion title="Secure Cookie Settings">
+    Use `HttpOnly` to prevent XSS attacks, `Secure` for HTTPS-only, and `SameSite` to prevent CSRF attacks.
+  </Accordion>
+  <Accordion title="Token Expiration">
+    Set reasonable expiration times. Access tokens: 15-60 minutes. Refresh tokens: days to weeks. Sessions: hours to days.
+  </Accordion>
+  <Accordion title="Password Hashing">
+    Use bcrypt or Argon2 for password hashing. Never store plain text passwords.
+  </Accordion>
+  <Accordion title="Rate Limiting">
+    Implement rate limiting on authentication endpoints to prevent brute force attacks.
+  </Accordion>
+  <Accordion title="Constant-Time Comparison">
+    Use `crypto/subtle.ConstantTimeCompare` for comparing secrets to prevent timing attacks.
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+Never commit secrets like JWT keys, API keys, or OAuth credentials to version control. Use environment variables or a secrets manager.
+</Warning>
+
+## Complete Authentication Flow
+
+<Tabs>
+  <Tab title="JWT API Flow">
+    ```
+    Client                          Server
+      |                               |
+      |-- POST /api/auth ----------->|  Login with credentials
+      |<- 200 { token: "..." } ------|  Receive JWT token
+      |                               |
+      |-- GET /api/protected ------->|  Request with Authorization: Bearer <token>
+      |   (Authorization: Bearer)     |  Middleware validates token
+      |<- 200 { data } --------------|  Authorized response
+    ```
+  </Tab>
+  <Tab title="Session Web Flow">
+    ```
+    Browser                         Server
+      |                               |
+      |-- POST /login -------------->|  Submit login form
+      |<- 302 + Set-Cookie ----------|  Redirect with session cookie
+      |                               |
+      |-- GET /dashboard ----------->|  Request with cookie
+      |   (Cookie: session_id)        |  Middleware validates session
+      |<- 200 <html>...</html> ------|  Authorized page
+    ```
+  </Tab>
+  <Tab title="OAuth Flow">
+    ```
+    Browser                         Server                    Google
+      |                               |                          |
+      |-- GET /api/auth/google ----->|                          |
+      |<- 302 to Google OAuth -------|                          |
+      |-- Authorize with Google -----|------------------------->|
+      |<---------------------- Callback with code --------------|
+      |-- GET /callback?code=xxx --->|                          |
+      |                               |-- Exchange code -------->|
+      |                               |<- User info -------------|
+      |<- 302 + Set-Cookie ----------|  Create session          |
+    ```
+  </Tab>
+</Tabs>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Middleware" icon="layer-group" href="/docs/middleware/overview">
+    Learn more about middleware patterns
+  </Card>
+  <Card title="Proxy" icon="shield" href="/docs/middleware/proxy">
+    Pre-routing request interception
+  </Card>
+  <Card title="Database" icon="database" href="/docs/guides/database">
+    Store users and sessions
+  </Card>
+  <Card title="Examples" icon="code" href="/docs/guides/examples">
+    Working authentication examples
+  </Card>
+</CardGroup>

@@ -1,0 +1,434 @@
+---
+title: Deployment
+description: 'Deploy Fuego apps to any platform with a single binary.'
+---
+
+Fuego apps compile to a single binary, making deployment straightforward across any platform.
+
+## Building for Production
+
+```bash
+# Using Fuego CLI
+fuego build
+
+# Or directly with Go
+go build -o myapp .
+
+# With optimizations
+go build -ldflags="-s -w" -o myapp .
+```
+
+<Info>
+The `-ldflags="-s -w"` strips debug information, reducing binary size by ~30%.
+</Info>
+
+## Docker
+
+### Simple Dockerfile
+
+```dockerfile
+FROM golang:1.23-alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -ldflags="-s -w" -o server .
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /app
+COPY --from=builder /app/server .
+COPY --from=builder /app/static ./static
+EXPOSE 3000
+CMD ["./server"]
+```
+
+### Multi-stage with Tailwind
+
+If using Tailwind CSS:
+
+```dockerfile
+FROM golang:1.23-alpine AS builder
+WORKDIR /app
+
+# Install Fuego CLI for Tailwind
+RUN go install github.com/abdul-hamid-achik/fuego/cmd/fuego@latest
+
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+
+# Build Tailwind CSS
+RUN fuego tailwind build
+
+# Build Go binary
+RUN go build -ldflags="-s -w" -o server .
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /app
+COPY --from=builder /app/server .
+COPY --from=builder /app/static ./static
+EXPOSE 3000
+CMD ["./server"]
+```
+
+### Docker Compose
+
+```yaml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - FUEGO_PORT=3000
+      - FUEGO_HOST=0.0.0.0
+    restart: unless-stopped
+```
+
+## Cloud Platforms
+
+<Tabs>
+  <Tab title="Fly.io">
+Fly.io is excellent for Go apps with global distribution.
+
+```bash
+# Install flyctl
+curl -L https://fly.io/install.sh | sh
+
+# Launch (creates fly.toml)
+fly launch
+
+# Deploy
+fly deploy
+```
+
+**fly.toml:**
+```toml
+app = "myapp"
+primary_region = "dfw"
+
+[build]
+  builder = "paketobuildpacks/builder:base"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+
+[[services]]
+  internal_port = 3000
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+```
+  </Tab>
+  <Tab title="Railway">
+Railway auto-detects Go projects.
+
+1. Push your code to GitHub
+2. Connect Railway to your repo
+3. Railway automatically builds and deploys
+
+**Environment variables:**
+```
+FUEGO_PORT=3000
+FUEGO_HOST=0.0.0.0
+```
+  </Tab>
+  <Tab title="Render">
+1. Create a new Web Service on Render
+2. Connect your GitHub repository
+3. Configure:
+   - **Build Command:** `go build -ldflags="-s -w" -o server .`
+   - **Start Command:** `./server`
+   - **Environment:** Go
+  </Tab>
+  <Tab title="Heroku">
+**Procfile:**
+```
+web: ./bin/myapp
+```
+
+```bash
+heroku create myapp
+heroku buildpacks:set heroku/go
+git push heroku main
+```
+  </Tab>
+</Tabs>
+
+## AWS
+
+<Tabs>
+  <Tab title="Lambda">
+Use a Lambda adapter:
+
+```go
+package main
+
+import (
+    "github.com/aws/aws-lambda-go/lambda"
+    "github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+var app *fuego.App
+
+func init() {
+    app = fuego.New()
+    // Configure routes
+}
+
+func main() {
+    lambda.Start(httpadapter.New(app).ProxyWithContext)
+}
+```
+  </Tab>
+  <Tab title="ECS/Fargate">
+Use the Docker image with ECS task definition:
+
+```json
+{
+  "containerDefinitions": [
+    {
+      "name": "myapp",
+      "image": "your-ecr-repo/myapp:latest",
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {"name": "FUEGO_PORT", "value": "3000"}
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+  <Tab title="Elastic Beanstalk">
+1. Create `Procfile`:
+   ```
+   web: ./application
+   ```
+
+2. Create `Buildfile`:
+   ```
+   build: go build -o application .
+   ```
+
+3. Deploy:
+   ```bash
+   eb init
+   eb create myapp-env
+   eb deploy
+   ```
+  </Tab>
+</Tabs>
+
+## Google Cloud Platform
+
+<Tabs>
+  <Tab title="Cloud Run">
+Cloud Run is ideal for containerized Go apps:
+
+```bash
+# Build and push
+gcloud builds submit --tag gcr.io/PROJECT_ID/myapp
+
+# Deploy
+gcloud run deploy myapp \
+  --image gcr.io/PROJECT_ID/myapp \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated
+```
+
+Or deploy from source:
+
+```bash
+gcloud run deploy --source .
+```
+  </Tab>
+  <Tab title="App Engine">
+**app.yaml:**
+```yaml
+runtime: go122
+env: standard
+
+handlers:
+  - url: /static
+    static_dir: static
+
+  - url: /.*
+    script: auto
+```
+
+Deploy:
+```bash
+gcloud app deploy
+```
+  </Tab>
+  <Tab title="GKE">
+**deployment.yaml:**
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+        - name: myapp
+          image: gcr.io/PROJECT_ID/myapp:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: FUEGO_PORT
+              value: "3000"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 3000
+  selector:
+    app: myapp
+```
+  </Tab>
+</Tabs>
+
+## Configuration
+
+### Environment Variables
+
+Fuego reads configuration from environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `FUEGO_PORT` | Server port | `3000` |
+| `FUEGO_HOST` | Server host | `localhost` |
+| `FUEGO_ENV` | Environment (dev/prod) | `dev` |
+| `FUEGO_LOG_LEVEL` | Log level | `info` |
+
+### fuego.yaml
+
+```yaml
+port: 3000
+host: "0.0.0.0"
+app_dir: "app"
+static_dir: "static"
+static_path: "/static"
+
+# Production settings
+prod:
+  hot_reload: false
+```
+
+## Health Checks
+
+Add a health endpoint for load balancers:
+
+```go
+// app/api/health/route.go
+package health
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+func Get(c *fuego.Context) error {
+    return c.JSON(200, map[string]string{
+        "status": "healthy",
+    })
+}
+```
+
+Configure your load balancer to check `/api/health`.
+
+## Static Files
+
+Ensure static files are included in deployment:
+
+```go
+app.Static("/static", "static")
+```
+
+For Docker, copy the static directory:
+```dockerfile
+COPY --from=builder /app/static ./static
+```
+
+## Graceful Shutdown
+
+Fuego handles SIGINT and SIGTERM for graceful shutdown automatically. In Kubernetes, configure a termination grace period:
+
+```yaml
+spec:
+  terminationGracePeriodSeconds: 30
+```
+
+## Production Checklist
+
+<AccordionGroup>
+  <Accordion title="Security">
+    - Enable HTTPS
+    - Set secure headers (`app.Use(fuego.SecureHeaders())`)
+    - Use environment variables for secrets
+    - Enable CORS properly
+  </Accordion>
+  <Accordion title="Performance">
+    - Build with `-ldflags="-s -w"`
+    - Enable response compression
+    - Set appropriate cache headers
+    - Use connection pooling for databases
+  </Accordion>
+  <Accordion title="Monitoring">
+    - Add health check endpoint
+    - Configure logging level for production
+    - Set up metrics collection
+    - Configure alerting
+  </Accordion>
+  <Accordion title="Reliability">
+    - Use graceful shutdown
+    - Configure request timeouts
+    - Add rate limiting
+    - Set up load balancing
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/docs/getting-started/quickstart">
+    Build your first app
+  </Card>
+  <Card title="Configuration" icon="gear" href="/docs/advanced/configuration">
+    Full configuration reference
+  </Card>
+  <Card title="Performance" icon="gauge-high" href="/docs/advanced/performance">
+    Optimization tips
+  </Card>
+  <Card title="Examples" icon="code" href="/docs/guides/examples">
+    Working code samples
+  </Card>
+</CardGroup>

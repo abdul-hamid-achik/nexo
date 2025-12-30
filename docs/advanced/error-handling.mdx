@@ -1,0 +1,444 @@
+---
+title: Error Handling
+description: 'Structured error handling patterns for consistent API responses and debugging.'
+---
+
+Fuego provides a structured error handling system that makes it easy to return consistent error responses and handle errors gracefully throughout your application.
+
+## HTTPError Type
+
+The foundation of Fuego's error handling is the `HTTPError` type:
+
+```go
+type HTTPError struct {
+    Code    int    `json:"code"`
+    Message string `json:"message"`
+    Err     error  `json:"-"` // Underlying error (not serialized)
+}
+```
+
+When you return an `HTTPError` from a handler, Fuego automatically serializes it to a consistent JSON response:
+
+```json
+{
+  "error": {
+    "code": 400,
+    "message": "invalid email format"
+  }
+}
+```
+
+## Error Helper Functions
+
+Fuego provides convenience functions for common HTTP errors:
+
+<Tabs>
+  <Tab title="Client Errors (4xx)">
+```go
+// 400 Bad Request
+return fuego.BadRequest("invalid input")
+
+// 401 Unauthorized
+return fuego.Unauthorized("authentication required")
+
+// 403 Forbidden
+return fuego.Forbidden("insufficient permissions")
+
+// 404 Not Found
+return fuego.NotFound("user not found")
+
+// 409 Conflict
+return fuego.Conflict("email already exists")
+```
+  </Tab>
+  <Tab title="Server Errors (5xx)">
+```go
+// 500 Internal Server Error
+return fuego.InternalServerError("database connection failed")
+
+// Custom error with any status code
+return fuego.NewHTTPError(503, "service temporarily unavailable")
+```
+  </Tab>
+</Tabs>
+
+## Using Errors in Handlers
+
+Here's a complete example of proper error handling in a route handler:
+
+```go
+// app/api/users/[id]/route.go
+package users
+
+import (
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+    "myapp/internal/db"
+)
+
+func Get(c *fuego.Context) error {
+    id := c.Param("id")
+    if id == "" {
+        return fuego.BadRequest("user ID is required")
+    }
+
+    user, err := db.FindUser(id)
+    if err != nil {
+        // Check if it's a not-found error
+        if errors.Is(err, db.ErrNotFound) {
+            return fuego.NotFound("user not found")
+        }
+        // Log the actual error, return generic message
+        log.Printf("database error: %v", err)
+        return fuego.InternalServerError("failed to fetch user")
+    }
+
+    return c.JSON(200, user)
+}
+
+func Put(c *fuego.Context) error {
+    id := c.Param("id")
+    
+    var input struct {
+        Name  string `json:"name"`
+        Email string `json:"email"`
+    }
+    
+    if err := c.Bind(&input); err != nil {
+        return fuego.BadRequest("invalid JSON body")
+    }
+
+    // Validate input
+    if input.Name == "" {
+        return fuego.BadRequest("name is required")
+    }
+    if !isValidEmail(input.Email) {
+        return fuego.BadRequest("invalid email format")
+    }
+
+    // Check for conflicts
+    existing, _ := db.FindUserByEmail(input.Email)
+    if existing != nil && existing.ID != id {
+        return fuego.Conflict("email already in use")
+    }
+
+    user, err := db.UpdateUser(id, input)
+    if err != nil {
+        return fuego.InternalServerError("failed to update user")
+    }
+
+    return c.JSON(200, user)
+}
+```
+
+## Wrapping Errors with Context
+
+Use `WrapError` to add context to errors while preserving the original:
+
+```go
+func Get(c *fuego.Context) error {
+    data, err := fetchFromExternalAPI()
+    if err != nil {
+        // Wrap with context for logging
+        wrappedErr := fuego.WrapError(err, "failed to fetch external data")
+        log.Printf("error: %v", wrappedErr)
+        
+        return fuego.InternalServerError("external service unavailable")
+    }
+    return c.JSON(200, data)
+}
+```
+
+## Errors with Underlying Causes
+
+Create errors with underlying causes for debugging:
+
+```go
+func Get(c *fuego.Context) error {
+    user, err := db.FindUser(id)
+    if err != nil {
+        // Create error with cause (cause is logged but not sent to client)
+        return fuego.NewHTTPErrorWithCause(
+            500,
+            "failed to fetch user",
+            err, // Original error preserved for logging
+        )
+    }
+    return c.JSON(200, user)
+}
+```
+
+## Checking Error Types
+
+Use `IsHTTPError` to check if an error is an `HTTPError`:
+
+```go
+func handleError(err error) {
+    if httpErr, ok := fuego.IsHTTPError(err); ok {
+        // Handle HTTPError specifically
+        log.Printf("HTTP %d: %s", httpErr.Code, httpErr.Message)
+        
+        // Access underlying cause if present
+        if httpErr.Err != nil {
+            log.Printf("Caused by: %v", httpErr.Err)
+        }
+    } else {
+        // Handle other errors
+        log.Printf("Unexpected error: %v", err)
+    }
+}
+```
+
+## Error Handling in Middleware
+
+Middleware can catch and transform errors:
+
+```go
+// app/api/middleware.go
+package api
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+func Middleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            err := next(c)
+            
+            if err != nil {
+                // Log all errors
+                log.Printf("[%s %s] error: %v", c.Method(), c.Path(), err)
+                
+                // Transform panic recovery errors
+                if httpErr, ok := fuego.IsHTTPError(err); ok {
+                    // Add request ID to error response
+                    return c.JSON(httpErr.Code, map[string]any{
+                        "error": map[string]any{
+                            "code":       httpErr.Code,
+                            "message":    httpErr.Message,
+                            "request_id": c.Header("X-Request-Id"),
+                        },
+                    })
+                }
+                
+                // Unknown errors become 500
+                return c.JSON(500, map[string]any{
+                    "error": map[string]any{
+                        "code":    500,
+                        "message": "internal server error",
+                    },
+                })
+            }
+            
+            return nil
+        }
+    }
+}
+```
+
+## The Recover Middleware
+
+Always use the `Recover` middleware in production to catch panics:
+
+```go
+// main.go
+app := fuego.New()
+app.Use(fuego.Recover()) // Catches panics, returns 500
+```
+
+<Warning>
+Without `Recover` middleware, a panic in your handler will crash the entire server. Always add it as your first middleware.
+</Warning>
+
+## Validation Patterns
+
+### Struct Validation
+
+```go
+type CreateUserInput struct {
+    Name     string `json:"name"`
+    Email    string `json:"email"`
+    Password string `json:"password"`
+}
+
+func (i *CreateUserInput) Validate() error {
+    if i.Name == "" {
+        return fuego.BadRequest("name is required")
+    }
+    if len(i.Name) < 2 {
+        return fuego.BadRequest("name must be at least 2 characters")
+    }
+    if !isValidEmail(i.Email) {
+        return fuego.BadRequest("invalid email format")
+    }
+    if len(i.Password) < 8 {
+        return fuego.BadRequest("password must be at least 8 characters")
+    }
+    return nil
+}
+
+func Post(c *fuego.Context) error {
+    var input CreateUserInput
+    if err := c.Bind(&input); err != nil {
+        return fuego.BadRequest("invalid JSON body")
+    }
+    
+    if err := input.Validate(); err != nil {
+        return err // Already an HTTPError
+    }
+    
+    // Create user...
+    return c.JSON(201, user)
+}
+```
+
+### Multiple Validation Errors
+
+For forms with multiple fields, collect all errors:
+
+```go
+type ValidationErrors struct {
+    Errors map[string]string `json:"errors"`
+}
+
+func validateInput(input CreateUserInput) *ValidationErrors {
+    errors := make(map[string]string)
+    
+    if input.Name == "" {
+        errors["name"] = "name is required"
+    }
+    if !isValidEmail(input.Email) {
+        errors["email"] = "invalid email format"
+    }
+    if len(input.Password) < 8 {
+        errors["password"] = "must be at least 8 characters"
+    }
+    
+    if len(errors) > 0 {
+        return &ValidationErrors{Errors: errors}
+    }
+    return nil
+}
+
+func Post(c *fuego.Context) error {
+    var input CreateUserInput
+    if err := c.Bind(&input); err != nil {
+        return fuego.BadRequest("invalid JSON body")
+    }
+    
+    if validationErrors := validateInput(input); validationErrors != nil {
+        return c.JSON(422, validationErrors)
+    }
+    
+    // Create user...
+    return c.JSON(201, user)
+}
+```
+
+## Error Response Formats
+
+<AccordionGroup>
+  <Accordion title="Standard Error Response">
+```json
+{
+  "error": {
+    "code": 400,
+    "message": "invalid email format"
+  }
+}
+```
+  </Accordion>
+  <Accordion title="Validation Error Response">
+```json
+{
+  "errors": {
+    "name": "name is required",
+    "email": "invalid email format",
+    "password": "must be at least 8 characters"
+  }
+}
+```
+  </Accordion>
+  <Accordion title="Rich Error Response">
+```json
+{
+  "error": {
+    "code": 404,
+    "message": "user not found",
+    "request_id": "abc123",
+    "documentation_url": "https://api.example.com/docs/errors#not-found"
+  }
+}
+```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Never expose internal errors to clients">
+Log the actual error for debugging, but return a generic message to clients:
+
+```go
+if err != nil {
+    log.Printf("database error: %v", err) // Log the real error
+    return fuego.InternalServerError("failed to process request") // Generic message
+}
+```
+  </Accordion>
+  <Accordion title="Use appropriate status codes">
+| Situation | Status Code | Helper Function |
+|-----------|-------------|-----------------|
+| Invalid input | 400 | `BadRequest()` |
+| Not authenticated | 401 | `Unauthorized()` |
+| Authenticated but not allowed | 403 | `Forbidden()` |
+| Resource doesn't exist | 404 | `NotFound()` |
+| Duplicate resource | 409 | `Conflict()` |
+| Server error | 500 | `InternalServerError()` |
+  </Accordion>
+  <Accordion title="Be consistent with error format">
+Use the same error response structure throughout your API. Consider creating a helper:
+
+```go
+func errorResponse(code int, message string) map[string]any {
+    return map[string]any{
+        "error": map[string]any{
+            "code":    code,
+            "message": message,
+        },
+    }
+}
+```
+  </Accordion>
+  <Accordion title="Add request context for debugging">
+Include request IDs and timestamps in error logs:
+
+```go
+log.Printf("[%s] [%s %s] error: %v",
+    time.Now().Format(time.RFC3339),
+    c.Method(),
+    c.Path(),
+    err,
+)
+```
+  </Accordion>
+</AccordionGroup>
+
+<Info>
+The error helpers (`BadRequest`, `NotFound`, etc.) return `*HTTPError` which implements the `error` interface, so you can return them directly from handlers.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Middleware" icon="layer-group" href="/docs/middleware/overview">
+    Add error handling middleware
+  </Card>
+  <Card title="Testing" icon="flask" href="/docs/advanced/testing">
+    Test error scenarios
+  </Card>
+  <Card title="Context API" icon="code" href="/docs/api/context">
+    Learn about request/response handling
+  </Card>
+  <Card title="Configuration" icon="gear" href="/docs/advanced/configuration">
+    Configure error logging levels
+  </Card>
+</CardGroup>

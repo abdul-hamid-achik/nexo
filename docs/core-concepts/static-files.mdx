@@ -1,0 +1,172 @@
+---
+title: Static Files
+description: 'Serve CSS, JavaScript, images, and other static assets.'
+---
+
+Fuego serves static files from the `static/` directory by default.
+
+## Default Configuration
+
+Static files are served from `/static` URL path:
+
+<FileTree>
+  <Folder name="myapp" defaultOpen>
+    <Folder name="static" defaultOpen>
+      <Folder name="css">
+        <File name="output.css" />
+      </Folder>
+      <Folder name="js">
+        <File name="app.js" />
+      </Folder>
+      <Folder name="images">
+        <File name="logo.png" />
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+Access via:
+- `/static/css/output.css`
+- `/static/js/app.js`
+- `/static/images/logo.png`
+
+## Using in Templates
+
+Reference static files in your layout:
+
+```go
+templ Layout(title string) {
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <link rel="stylesheet" href="/static/css/output.css"/>
+        <script src="/static/js/app.js" defer></script>
+    </head>
+    <body>
+        <img src="/static/images/logo.png" alt="Logo"/>
+        { children... }
+    </body>
+    </html>
+}
+```
+
+## Configuration
+
+### fuego.yaml
+
+```yaml
+static_dir: "static"    # Directory containing static files
+static_path: "/static"  # URL path prefix
+```
+
+### Custom Static Path
+
+Change the URL path in `fuego.yaml`:
+
+```yaml
+static_dir: "public"
+static_path: "/assets"
+```
+
+Now files are served from `/assets/*` instead of `/static/*`.
+
+## Tailwind CSS
+
+When using Tailwind, the file structure is:
+
+<FileTree>
+  <Folder name="myapp" defaultOpen>
+    <Folder name="styles">
+      <File name="input.css" />
+    </Folder>
+    <Folder name="static">
+      <Folder name="css">
+        <File name="output.css" />
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+- `styles/input.css` - Source CSS with Tailwind directives
+- `static/css/output.css` - Compiled CSS (generated)
+
+See [Tailwind CSS](/docs/frontend/tailwind) for setup details.
+
+## Cache Headers
+
+For production, set cache headers to improve performance:
+
+```go
+// In main.go or middleware
+func CacheMiddleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            if strings.HasPrefix(c.Path(), "/static/") {
+                c.SetHeader("Cache-Control", "public, max-age=31536000")
+            }
+            return next(c)
+        }
+    }
+}
+```
+
+## Development vs Production
+
+### Development
+- Hot reload automatically rebuilds CSS
+- No caching for quick iteration
+
+### Production
+- CSS is minified
+- Long cache headers
+- Files served from compiled binary
+
+<Tip>
+Use `fuego build` to create a production binary that embeds static files.
+</Tip>
+
+## Multiple Static Directories
+
+You can serve multiple static directories:
+
+```go
+// main.go
+app := fuego.New()
+app.Static("/static", "static")
+app.Static("/uploads", "uploads")
+app.Static("/vendor", "node_modules")
+```
+
+## Docker Deployment
+
+Include static files in your Docker image:
+
+```dockerfile
+FROM golang:1.23-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN go build -o server .
+
+FROM alpine:latest
+WORKDIR /app
+COPY --from=builder /app/server .
+COPY --from=builder /app/static ./static
+CMD ["./server"]
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tailwind CSS" icon="paintbrush" href="/docs/frontend/tailwind">
+    Set up Tailwind
+  </Card>
+  <Card title="Templates" icon="file-code" href="/docs/core-concepts/templates">
+    Use static files in templates
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/docs/guides/deployment">
+    Deploy with static files
+  </Card>
+  <Card title="Configuration" icon="gear" href="/docs/advanced/configuration">
+    Full configuration options
+  </Card>
+</CardGroup>

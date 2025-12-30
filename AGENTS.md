@@ -2,6 +2,8 @@
 
 This document provides detailed guidance for LLM agents working with Fuego projects.
 
+**Documentation:** https://gofuego.dev
+
 ## Overview
 
 Fuego is a file-system based Go framework inspired by Next.js App Router. Routes are defined by the file structure under the `app/` directory.
@@ -636,7 +638,7 @@ Fuego is registered with [Context7](https://context7.com), which provides up-to-
 Update `context7.json` whenever you:
 
 1. **Add or modify documentation** in the `docs/` folder
-2. **Add new examples** in the `examples/` folder
+2. **Add or modify examples** in `docs/guides/examples.mdx`
 3. **Change best practices** or coding patterns
 4. **Add new rules or guidelines** that AI assistants should follow
 5. **Release a new version** that should be indexed
@@ -649,7 +651,7 @@ Update `context7.json` whenever you:
   "$schema": "https://context7.com/schema/context7.json",
   "projectTitle": "Fuego",
   "description": "A file-system based Go framework for APIs and websites, inspired by Next.js App Router",
-  "folders": ["docs", "examples"],
+  "folders": ["docs"],
   "excludeFolders": [
     "node_modules",
     ".git",
@@ -704,7 +706,7 @@ Set up a full-stack page with HTMX and Tailwind using Fuego. use context7
 
 The AI assistant will automatically receive:
 - Current documentation from `docs/` folder
-- Working examples from `examples/` folder
+- Working examples from `docs/guides/examples.mdx`
 - Best practices from the `rules` array
 - Version-specific information
 

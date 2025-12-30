@@ -1,0 +1,573 @@
+---
+title: Performance
+description: 'Optimize your Fuego application for maximum throughput and minimal latency.'
+---
+
+Fuego is built on Go's high-performance `net/http` and `chi` router, providing excellent performance out of the box. This guide covers techniques to optimize your application further.
+
+## Performance Characteristics
+
+Fuego inherits Go's performance benefits:
+
+- **Compiled binary** - No runtime interpretation
+- **Efficient goroutine scheduling** - Handles thousands of concurrent connections
+- **Low memory footprint** - Minimal allocations per request
+- **Fast JSON encoding** - Uses standard `encoding/json`
+
+Typical performance on modern hardware:
+
+| Metric | Value |
+|--------|-------|
+| Requests/sec | 50,000+ (simple JSON) |
+| Latency (p99) | < 5ms |
+| Memory per request | ~2KB |
+| Startup time | < 100ms |
+
+## Benchmarking Your Application
+
+### Using Go's Built-in Benchmarks
+
+```go
+// handlers_test.go
+package main
+
+import (
+    "net/http/httptest"
+    "testing"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+func BenchmarkGetUsers(b *testing.B) {
+    app := fuego.New()
+    app.Get("/api/users", func(c *fuego.Context) error {
+        return c.JSON(200, map[string]any{
+            "users": []string{"alice", "bob", "charlie"},
+        })
+    })
+    app.Mount()
+    
+    r := httptest.NewRequest("GET", "/api/users", nil)
+    
+    b.ResetTimer()
+    b.ReportAllocs()
+    
+    for i := 0; i < b.N; i++ {
+        w := httptest.NewRecorder()
+        app.ServeHTTP(w, r)
+    }
+}
+```
+
+Run benchmarks:
+
+```bash
+go test -bench=. -benchmem ./...
+```
+
+### Using hey for Load Testing
+
+```bash
+# Install hey
+go install github.com/rakyll/hey@latest
+
+# Run load test
+hey -n 10000 -c 100 http://localhost:3000/api/users
+```
+
+### Using wrk for Sustained Load
+
+```bash
+# Install wrk (macOS)
+brew install wrk
+
+# Run load test
+wrk -t4 -c100 -d30s http://localhost:3000/api/users
+```
+
+## Optimization Techniques
+
+### 1. Response Caching
+
+Cache frequently accessed, rarely changing data:
+
+```go
+// Simple in-memory cache
+type Cache struct {
+    mu    sync.RWMutex
+    items map[string]cacheItem
+}
+
+type cacheItem struct {
+    data      any
+    expiresAt time.Time
+}
+
+func (c *Cache) Get(key string) (any, bool) {
+    c.mu.RLock()
+    defer c.mu.RUnlock()
+    
+    item, ok := c.items[key]
+    if !ok || time.Now().After(item.expiresAt) {
+        return nil, false
+    }
+    return item.data, true
+}
+
+func (c *Cache) Set(key string, data any, ttl time.Duration) {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    
+    c.items[key] = cacheItem{
+        data:      data,
+        expiresAt: time.Now().Add(ttl),
+    }
+}
+
+// Usage in handler
+var cache = &Cache{items: make(map[string]cacheItem)}
+
+func Get(c *fuego.Context) error {
+    cacheKey := "users:all"
+    
+    if data, ok := cache.Get(cacheKey); ok {
+        return c.JSON(200, data)
+    }
+    
+    users, err := db.GetAllUsers()
+    if err != nil {
+        return fuego.InternalServerError("failed to fetch users")
+    }
+    
+    cache.Set(cacheKey, users, 5*time.Minute)
+    return c.JSON(200, users)
+}
+```
+
+<Tip>
+For production caching, consider Redis or Memcached for distributed caching across multiple instances.
+</Tip>
+
+### 2. Database Connection Pooling
+
+Configure proper connection pools:
+
+```go
+import (
+    "database/sql"
+    _ "github.com/lib/pq"
+)
+
+func setupDB() *sql.DB {
+    db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Configure connection pool
+    db.SetMaxOpenConns(25)                 // Max open connections
+    db.SetMaxIdleConns(5)                  // Max idle connections
+    db.SetConnMaxLifetime(5 * time.Minute) // Connection lifetime
+    db.SetConnMaxIdleTime(1 * time.Minute) // Idle timeout
+    
+    return db
+}
+```
+
+### 3. Avoid Allocations in Hot Paths
+
+Use sync.Pool for frequently allocated objects:
+
+```go
+var bufferPool = sync.Pool{
+    New: func() any {
+        return new(bytes.Buffer)
+    },
+}
+
+func Get(c *fuego.Context) error {
+    buf := bufferPool.Get().(*bytes.Buffer)
+    defer func() {
+        buf.Reset()
+        bufferPool.Put(buf)
+    }()
+    
+    // Use buf for building response
+    encoder := json.NewEncoder(buf)
+    encoder.Encode(data)
+    
+    return c.Blob(200, "application/json", buf.Bytes())
+}
+```
+
+### 4. Efficient JSON Handling
+
+For high-performance JSON, consider using faster encoders:
+
+<Tabs>
+  <Tab title="Standard (Default)">
+```go
+// Uses encoding/json - good for most cases
+return c.JSON(200, data)
+```
+  </Tab>
+  <Tab title="sonic (Faster)">
+```go
+import "github.com/bytedance/sonic"
+
+func Get(c *fuego.Context) error {
+    data, _ := sonic.Marshal(response)
+    return c.Blob(200, "application/json", data)
+}
+```
+  </Tab>
+  <Tab title="Pre-encoded">
+```go
+// Pre-encode static responses
+var healthResponse = []byte(`{"status":"ok"}`)
+
+func Get(c *fuego.Context) error {
+    c.SetHeader("Content-Type", "application/json")
+    _, err := c.Response.Write(healthResponse)
+    return err
+}
+```
+  </Tab>
+</Tabs>
+
+### 5. Middleware Optimization
+
+Keep middleware lean:
+
+```go
+// Good - Fast middleware
+func Timing() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            start := time.Now()
+            err := next(c)
+            c.SetHeader("X-Response-Time", time.Since(start).String())
+            return err
+        }
+    }
+}
+
+// Avoid - Slow middleware with unnecessary work
+func SlowMiddleware() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            // Don't do heavy work on every request
+            expensiveOperation()  // Bad!
+            return next(c)
+        }
+    }
+}
+```
+
+### 6. Lazy Loading
+
+Only load data when needed:
+
+```go
+type LazyUser struct {
+    ID       string
+    Name     string
+    posts    []Post
+    postsErr error
+    postsOnce sync.Once
+}
+
+func (u *LazyUser) Posts(db *sql.DB) ([]Post, error) {
+    u.postsOnce.Do(func() {
+        u.posts, u.postsErr = db.LoadPostsForUser(u.ID)
+    })
+    return u.posts, u.postsErr
+}
+```
+
+### 7. Compression
+
+Enable gzip compression for large responses:
+
+```go
+func Gzip() fuego.MiddlewareFunc {
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            // Check if client accepts gzip
+            if !strings.Contains(c.Header("Accept-Encoding"), "gzip") {
+                return next(c)
+            }
+            
+            // Wrap response writer with gzip
+            gz := gzip.NewWriter(c.Response)
+            defer gz.Close()
+            
+            c.SetHeader("Content-Encoding", "gzip")
+            c.Response = &gzipResponseWriter{ResponseWriter: c.Response, Writer: gz}
+            
+            return next(c)
+        }
+    }
+}
+```
+
+<Info>
+For production, consider using a reverse proxy (nginx, Caddy) for compression instead of handling it in Go.
+</Info>
+
+## Request Logger Performance
+
+The built-in logger is designed for minimal overhead:
+
+```go
+// Disable logging for maximum performance
+app.DisableLogger()
+
+// Or skip certain paths
+app.SetLogger(fuego.RequestLoggerConfig{
+    SkipPaths:  []string{"/health", "/metrics"},
+    SkipStatic: true,
+    Level:      fuego.LogLevelWarn, // Only log errors
+})
+```
+
+## Static File Serving
+
+For high-traffic static files, use a CDN or reverse proxy:
+
+```go
+// In Fuego - OK for moderate traffic
+app.Static("/static", "static")
+
+// Better - Use nginx or CDN for static files
+// nginx.conf:
+// location /static {
+//     root /app/static;
+//     expires 1y;
+//     add_header Cache-Control "public, immutable";
+// }
+```
+
+## Profiling Your Application
+
+### CPU Profiling
+
+```go
+import (
+    "net/http/pprof"
+    "runtime"
+)
+
+func main() {
+    // Enable pprof endpoints
+    app := fuego.New()
+    
+    app.Get("/debug/pprof/*", func(c *fuego.Context) error {
+        pprof.Index(c.Response, c.Request)
+        return nil
+    })
+    
+    app.Start()
+}
+```
+
+Generate and view CPU profile:
+
+```bash
+# Generate 30-second CPU profile
+go tool pprof http://localhost:3000/debug/pprof/profile?seconds=30
+
+# View in browser
+go tool pprof -http=:8081 profile.out
+```
+
+### Memory Profiling
+
+```bash
+# Heap profile
+go tool pprof http://localhost:3000/debug/pprof/heap
+
+# Allocations profile
+go tool pprof http://localhost:3000/debug/pprof/allocs
+```
+
+### Tracing
+
+```go
+import "runtime/trace"
+
+func main() {
+    f, _ := os.Create("trace.out")
+    trace.Start(f)
+    defer trace.Stop()
+    
+    // Run your application
+}
+```
+
+View trace:
+
+```bash
+go tool trace trace.out
+```
+
+## Production Checklist
+
+<AccordionGroup>
+  <Accordion title="Build with optimizations">
+```bash
+go build -ldflags="-s -w" -o myapp ./cmd/myapp
+```
+Removes debug symbols for smaller binary.
+  </Accordion>
+  
+  <Accordion title="Use GOMAXPROCS">
+Match CPU count to available cores:
+```go
+import _ "go.uber.org/automaxprocs"
+```
+Automatically sets GOMAXPROCS in containers.
+  </Accordion>
+  
+  <Accordion title="Configure timeouts">
+```go
+app := fuego.New()
+app.Use(fuego.Timeout(30 * time.Second))
+```
+Prevent slow requests from consuming resources.
+  </Accordion>
+  
+  <Accordion title="Add rate limiting">
+```go
+app.Use(fuego.RateLimiter(1000, time.Minute))
+```
+Protect against traffic spikes.
+  </Accordion>
+  
+  <Accordion title="Enable keep-alive">
+HTTP keep-alive is enabled by default in Go. Ensure your reverse proxy supports it.
+  </Accordion>
+  
+  <Accordion title="Use connection pooling">
+Configure database and HTTP client connection pools appropriately for your workload.
+  </Accordion>
+</AccordionGroup>
+
+## Performance Anti-Patterns
+
+<Warning>
+Avoid these common performance mistakes:
+</Warning>
+
+| Anti-Pattern | Problem | Solution |
+|--------------|---------|----------|
+| N+1 queries | DB call per item in list | Use JOINs or batch loading |
+| Unbounded queries | Loading all records | Add pagination |
+| Synchronous I/O | Blocking on external calls | Use goroutines and channels |
+| Large response bodies | Slow transfers | Compress or paginate |
+| No caching | Repeated expensive operations | Add caching layer |
+| Global locks | Contention under load | Use finer-grained locks |
+
+## Monitoring
+
+Set up monitoring to track performance:
+
+```go
+// Prometheus metrics middleware
+func Metrics() fuego.MiddlewareFunc {
+    requestDuration := prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "http_request_duration_seconds",
+            Help:    "HTTP request duration",
+            Buckets: prometheus.DefBuckets,
+        },
+        []string{"method", "path", "status"},
+    )
+    prometheus.MustRegister(requestDuration)
+    
+    return func(next fuego.HandlerFunc) fuego.HandlerFunc {
+        return func(c *fuego.Context) error {
+            start := time.Now()
+            err := next(c)
+            duration := time.Since(start).Seconds()
+            
+            requestDuration.WithLabelValues(
+                c.Method(),
+                c.Path(),
+                strconv.Itoa(c.StatusCode()),
+            ).Observe(duration)
+            
+            return err
+        }
+    }
+}
+```
+
+## Scaling Strategies
+
+### Horizontal Scaling
+
+Fuego apps are stateless by default, making horizontal scaling easy:
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    image: myapp:latest
+    deploy:
+      replicas: 4
+    environment:
+      - FUEGO_PORT=3000
+  
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+```
+
+### Load Balancer Configuration
+
+```nginx
+# nginx.conf
+upstream fuego_app {
+    least_conn;
+    server app:3000;
+}
+
+server {
+    listen 80;
+    
+    location / {
+        proxy_pass http://fuego_app;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+    
+    location /static {
+        root /app;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/docs/advanced/configuration">
+    Tune configuration for performance
+  </Card>
+  <Card title="Deployment" icon="cloud" href="/docs/guides/deployment">
+    Deploy at scale
+  </Card>
+  <Card title="Middleware" icon="layer-group" href="/docs/middleware/overview">
+    Optimize middleware chains
+  </Card>
+  <Card title="Testing" icon="flask" href="/docs/advanced/testing">
+    Benchmark your handlers
+  </Card>
+</CardGroup>

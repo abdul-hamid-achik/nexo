@@ -1,0 +1,343 @@
+---
+title: Templates
+description: 'Build type-safe HTML pages with templ templates.'
+---
+
+Fuego uses [templ](https://templ.guide) for type-safe HTML templates. Templ provides compile-time validation and excellent Go integration.
+
+## Why templ?
+
+- **Type-safe** - Compile-time checking catches errors early
+- **Fast** - No runtime template parsing
+- **Go-native** - Full Go code completion in templates
+- **Small** - Smaller binary size than text/template
+
+## File Conventions
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <File name="layout.templ" />
+    <File name="page.templ" />
+    <Folder name="dashboard">
+      <File name="page.templ" />
+      <File name="layout.templ" />
+    </Folder>
+    <Folder name="users">
+      <Folder name="[id]">
+        <File name="page.templ" />
+      </Folder>
+    </Folder>
+  </Folder>
+</FileTree>
+
+| File | Purpose | Route |
+|------|---------|-------|
+| `page.templ` | Page content | URL path |
+| `layout.templ` | Wraps pages | Inherited by children |
+
+## Creating Pages
+
+### Basic Page
+
+Create `app/dashboard/page.templ`:
+
+```go
+package dashboard
+
+templ Page() {
+    <div class="container">
+        <h1>Dashboard</h1>
+        <p>Welcome to your dashboard!</p>
+    </div>
+}
+```
+
+This maps to `/dashboard`.
+
+### Page with Props
+
+```go
+package dashboard
+
+type PageProps struct {
+    User     User
+    Stats    DashboardStats
+}
+
+templ Page(props PageProps) {
+    <div class="container">
+        <h1>Welcome, { props.User.Name }!</h1>
+        <div class="stats">
+            <p>Total tasks: { fmt.Sprint(props.Stats.TaskCount) }</p>
+        </div>
+    </div>
+}
+```
+
+## Creating Layouts
+
+### Root Layout
+
+Create `app/layout.templ`:
+
+```go
+package app
+
+templ Layout(title string) {
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <title>{ title } - My App</title>
+        <link rel="stylesheet" href="/static/css/output.css"/>
+        <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    </head>
+    <body class="bg-gray-100 min-h-screen">
+        <nav class="bg-white shadow-sm">
+            <div class="max-w-7xl mx-auto px-4">
+                <a href="/" class="text-xl font-bold">My App</a>
+            </div>
+        </nav>
+        <main class="max-w-7xl mx-auto py-6">
+            { children... }
+        </main>
+    </body>
+    </html>
+}
+```
+
+<Warning>
+Layouts must include `{ children... }` where page content should appear.
+</Warning>
+
+### Nested Layouts
+
+Create `app/dashboard/layout.templ`:
+
+```go
+package dashboard
+
+templ Layout() {
+    <div class="flex">
+        <aside class="w-64 bg-gray-800 text-white">
+            <nav>
+                <a href="/dashboard">Overview</a>
+                <a href="/dashboard/settings">Settings</a>
+            </nav>
+        </aside>
+        <div class="flex-1">
+            { children... }
+        </div>
+    </div>
+}
+```
+
+Nested layouts override parent layouts.
+
+## Dynamic Pages
+
+### URL Parameters
+
+Create `app/users/[id]/page.templ`:
+
+```go
+package users
+
+templ Page(user User) {
+    <div class="user-profile">
+        <h1>{ user.Name }</h1>
+        <p>{ user.Email }</p>
+    </div>
+}
+```
+
+Access via `/users/123`.
+
+## Components
+
+### Creating Components
+
+```go
+package components
+
+templ Button(text string, variant string) {
+    <button class={ "btn", "btn-" + variant }>
+        { text }
+    </button>
+}
+
+templ Card(title string) {
+    <div class="card">
+        <h2>{ title }</h2>
+        <div class="card-body">
+            { children... }
+        </div>
+    </div>
+}
+```
+
+### Using Components
+
+```go
+package dashboard
+
+import "myapp/app/_components"
+
+templ Page() {
+    <div>
+        @components.Card("Statistics") {
+            <p>Your stats here</p>
+        }
+        @components.Button("Save", "primary")
+    </div>
+}
+```
+
+## HTMX Integration
+
+### Loading Data
+
+```go
+templ TaskList() {
+    <div id="task-list" hx-get="/api/tasks" hx-trigger="load">
+        <p>Loading tasks...</p>
+    </div>
+}
+```
+
+### Form Submission
+
+```go
+templ AddTaskForm() {
+    <form 
+        hx-post="/api/tasks" 
+        hx-target="#task-list"
+        hx-swap="innerHTML"
+        hx-on::after-request="this.reset()"
+    >
+        <input type="text" name="title" placeholder="New task..." required/>
+        <button type="submit">Add Task</button>
+    </form>
+}
+```
+
+### Toggle Actions
+
+```go
+templ TaskItem(task Task) {
+    <li class="flex items-center gap-3">
+        <input 
+            type="checkbox" 
+            hx-post={ fmt.Sprintf("/api/tasks/toggle?id=%d", task.ID) }
+            hx-target="#task-list"
+            if task.Completed {
+                checked
+            }
+        />
+        <span class={ templ.KV("line-through", task.Completed) }>
+            { task.Title }
+        </span>
+        <button 
+            hx-delete={ fmt.Sprintf("/api/tasks?id=%d", task.ID) }
+            hx-target="#task-list"
+        >
+            Delete
+        </button>
+    </li>
+}
+```
+
+## Full Example: Task Dashboard
+
+```go
+// app/dashboard/page.templ
+package dashboard
+
+templ Page() {
+    <div class="px-4 py-5 sm:p-6">
+        <h1 class="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
+        
+        <div class="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Tasks</h2>
+            
+            <!-- HTMX-powered task list -->
+            <div id="task-list" hx-get="/api/tasks" hx-trigger="load" hx-swap="innerHTML">
+                <div class="text-gray-500">Loading tasks...</div>
+            </div>
+            
+            <!-- Add task form with HTMX -->
+            <form 
+                class="mt-6 flex gap-4"
+                hx-post="/api/tasks" 
+                hx-target="#task-list"
+                hx-swap="innerHTML"
+                hx-on::after-request="this.reset()"
+            >
+                <input 
+                    type="text" 
+                    name="title" 
+                    placeholder="New task..." 
+                    class="flex-1 rounded-md border-gray-300"
+                    required
+                />
+                <button 
+                    type="submit"
+                    class="px-4 py-2 bg-orange-600 text-white rounded-md"
+                >
+                    Add Task
+                </button>
+            </form>
+        </div>
+    </div>
+}
+```
+
+## Generating Pages
+
+Use the CLI to generate pages:
+
+```bash
+# Basic page
+fuego generate page dashboard
+
+# Page with layout
+fuego generate page admin/settings --with-layout
+
+# Nested page
+fuego generate page users/profile
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use components for reusability">
+    Extract common UI patterns into components in a `_components` folder.
+  </Accordion>
+  <Accordion title="Keep pages focused">
+    Pages should primarily compose components, not contain complex logic.
+  </Accordion>
+  <Accordion title="Use HTMX for interactivity">
+    Let the server render HTML instead of writing client-side JavaScript.
+  </Accordion>
+  <Accordion title="Validate at compile time">
+    templ catches errors during compilation. Fix warnings before deploying.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="HTMX Integration" icon="bolt" href="/docs/frontend/htmx">
+    Build interactive UIs
+  </Card>
+  <Card title="Tailwind CSS" icon="paintbrush" href="/docs/frontend/tailwind">
+    Style your pages
+  </Card>
+  <Card title="Forms" icon="rectangle-list" href="/docs/frontend/forms">
+    Handle form submissions
+  </Card>
+  <Card title="Examples" icon="code" href="/docs/guides/examples">
+    Full-stack example
+  </Card>
+</CardGroup>
