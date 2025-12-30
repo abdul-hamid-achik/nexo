@@ -358,30 +358,30 @@ middleware:
 Full documentation is available at [gofuego.dev](https://gofuego.dev).
 
 **Getting Started:**
-- [Quick Start](/docs/getting-started/quickstart)
-- [Familiar Patterns](/docs/getting-started/familiar-patterns)
+- [Quick Start](https://gofuego.dev/getting-started/quickstart)
+- [Familiar Patterns](https://gofuego.dev/getting-started/familiar-patterns)
 
 **Core Concepts:**
-- [File-based Routing](/docs/routing/file-based)
-- [Middleware](/docs/middleware/overview)
-- [Proxy](/docs/middleware/proxy)
-- [Templates](/docs/core-concepts/templates)
-- [Static Files](/docs/core-concepts/static-files)
+- [File-based Routing](https://gofuego.dev/routing/file-based)
+- [Middleware](https://gofuego.dev/middleware/overview)
+- [Proxy](https://gofuego.dev/middleware/proxy)
+- [Templates](https://gofuego.dev/core-concepts/templates)
+- [Static Files](https://gofuego.dev/core-concepts/static-files)
 
 **Frontend:**
-- [HTMX Integration](/docs/frontend/htmx)
-- [Tailwind CSS](/docs/frontend/tailwind)
-- [Forms](/docs/frontend/forms)
+- [HTMX Integration](https://gofuego.dev/frontend/htmx)
+- [Tailwind CSS](https://gofuego.dev/frontend/tailwind)
+- [Forms](https://gofuego.dev/frontend/forms)
 
 **Guides:**
-- [Examples](/docs/guides/examples) - Working code examples for common patterns
-- [Authentication](/docs/guides/authentication)
-- [Database](/docs/guides/database)
-- [Deployment](/docs/guides/deployment)
+- [Examples](https://gofuego.dev/guides/examples) - Working code examples for common patterns
+- [Authentication](https://gofuego.dev/guides/authentication)
+- [Database](https://gofuego.dev/guides/database)
+- [Deployment](https://gofuego.dev/guides/deployment)
 
 **Reference:**
-- [Context API](/docs/api/context)
-- [CLI Reference](/docs/reference/cli)
+- [Context API](https://gofuego.dev/api/context)
+- [CLI Reference](https://gofuego.dev/reference/cli)
 
 ## Development
 

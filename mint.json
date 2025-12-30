@@ -2,10 +2,10 @@
   "$schema": "https://mintlify.com/schema.json",
   "name": "Fuego",
   "logo": {
-    "dark": "/docs/logo/dark.svg",
-    "light": "/docs/logo/light.svg"
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
   },
-  "favicon": "/docs/favicon.svg",
+  "favicon": "/favicon.svg",
   "colors": {
     "primary": "#F97316",
     "light": "#FB923C",
@@ -23,16 +23,16 @@
   ],
   "topbarCtaButton": {
     "name": "Get Started",
-    "url": "/docs/getting-started/quickstart"
+    "url": "/getting-started/quickstart"
   },
   "tabs": [
     {
       "name": "Documentation",
-      "url": "/docs"
+      "url": "/"
     },
     {
       "name": "API Reference",
-      "url": "/docs/api"
+      "url": "/api"
     }
   ],
   "anchors": [
@@ -51,52 +51,52 @@
     {
       "group": "Getting Started",
       "pages": [
-        "docs/introduction",
-        "docs/getting-started/quickstart",
-        "docs/getting-started/familiar-patterns"
+        "introduction",
+        "getting-started/quickstart",
+        "getting-started/familiar-patterns"
       ]
     },
     {
       "group": "Core Concepts",
       "pages": [
-        "docs/routing/file-based",
-        "docs/middleware/overview",
-        "docs/middleware/proxy",
-        "docs/core-concepts/templates",
-        "docs/core-concepts/static-files"
+        "routing/file-based",
+        "middleware/overview",
+        "middleware/proxy",
+        "core-concepts/templates",
+        "core-concepts/static-files"
       ]
     },
     {
       "group": "Frontend",
       "pages": [
-        "docs/frontend/htmx",
-        "docs/frontend/tailwind",
-        "docs/frontend/forms"
+        "frontend/htmx",
+        "frontend/tailwind",
+        "frontend/forms"
       ]
     },
     {
       "group": "Advanced",
       "pages": [
-        "docs/advanced/error-handling",
-        "docs/advanced/testing",
-        "docs/advanced/configuration",
-        "docs/advanced/performance"
+        "advanced/error-handling",
+        "advanced/testing",
+        "advanced/configuration",
+        "advanced/performance"
       ]
     },
     {
       "group": "Guides",
       "pages": [
-        "docs/guides/examples",
-        "docs/guides/authentication",
-        "docs/guides/database",
-        "docs/guides/deployment"
+        "guides/examples",
+        "guides/authentication",
+        "guides/database",
+        "guides/deployment"
       ]
     },
     {
       "group": "API Reference",
       "pages": [
-        "docs/api/context",
-        "docs/reference/cli"
+        "api/context",
+        "reference/cli"
       ]
     }
   ],
