@@ -2,7 +2,7 @@
 
 This document provides detailed guidance for LLM agents working with Fuego projects.
 
-**Documentation:** https://gofuego.dev
+**Documentation:** https://fuego.build
 
 ## Overview
 
@@ -10,7 +10,7 @@ Fuego is a file-system based Go framework inspired by Next.js App Router. Routes
 
 ## Documentation Structure
 
-The documentation at https://gofuego.dev is organized into two main tabs:
+The documentation at https://fuego.build is organized into two main tabs:
 
 ### Guides Tab (`/docs`)
 - **Getting Started** - Introduction, Quickstart, Familiar Patterns
@@ -205,6 +205,29 @@ fuego generate page dashboard
 fuego generate page admin/settings --with-layout
 ```
 
+### 8. Upgrade Fuego CLI
+
+Check for and install the latest version:
+
+```bash
+# Upgrade to latest stable version
+fuego upgrade
+
+# Check for updates without installing
+fuego upgrade --check
+
+# Install specific version
+fuego upgrade --version v0.5.0
+
+# Include prereleases
+fuego upgrade --prerelease
+
+# Rollback to previous version
+fuego upgrade --rollback
+```
+
+The CLI automatically checks for updates in the background when running `fuego dev` (once every 24 hours) and displays a notification if a new version is available.
+
 ## Handler Signatures
 
 ### Route Handler
@@ -271,7 +294,7 @@ func Proxy(c *fuego.Context) (*fuego.ProxyResult, error) {
 
 ## Error Handling
 
-Use the built-in error helpers for semantic HTTP errors. See https://gofuego.dev/docs/api/errors for details.
+Use the built-in error helpers for semantic HTTP errors. See https://fuego.build/docs/api/errors for details.
 
 ```go
 func Get(c *fuego.Context) error {
@@ -323,7 +346,7 @@ func Get(c *fuego.Context) error {
 
 ## Built-in Middleware
 
-Fuego provides 9 built-in middleware functions. See https://gofuego.dev/docs/api/middleware for full configuration options.
+Fuego provides 9 built-in middleware functions. See https://fuego.build/docs/api/middleware for full configuration options.
 
 | Middleware | Usage | Description |
 |------------|-------|-------------|

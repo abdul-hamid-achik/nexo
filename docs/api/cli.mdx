@@ -1004,6 +1004,102 @@ Once configured, AI assistants can use natural language:
 
 ---
 
+## fuego upgrade
+
+Check for and install new versions of Fuego CLI. The upgrade command supports automatic updates from GitHub releases with checksum verification and rollback capability.
+
+```bash
+fuego upgrade [flags]
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--check` | `false` | Check for updates without installing |
+| `--version` | | Install a specific version (e.g., `v0.5.0`) |
+| `--prerelease` | `false` | Include prerelease versions |
+| `--force` | `false` | Force upgrade even if same version |
+| `--rollback` | `false` | Restore previous version from backup |
+| `--json` | `false` | Output as JSON |
+
+### Examples
+
+```bash
+# Upgrade to latest stable version
+fuego upgrade
+
+# Check for updates without installing
+fuego upgrade --check
+
+# Install a specific version
+fuego upgrade --version v0.5.0
+
+# Include prereleases
+fuego upgrade --prerelease
+
+# Force reinstall current version
+fuego upgrade --force
+
+# Rollback to previous version
+fuego upgrade --rollback
+
+# JSON output for scripting
+fuego upgrade --json
+```
+
+### Output
+
+```
+  Fuego Upgrade
+
+  Current version: v0.4.3
+  Latest version:  v0.5.0 (released 2 days ago)
+
+  -> Downloading fuego_0.5.0_darwin_arm64.tar.gz...
+  -> Verifying checksum...
+  -> Extracting binary...
+  -> Installing...
+  OK Upgraded successfully to v0.5.0!
+
+  Backup saved to: ~/.cache/fuego/fuego.backup
+  To rollback: fuego upgrade --rollback
+
+  Release notes:
+    - Added self-update command
+    - Improved route generation performance
+    - Fixed issue with nested layouts
+```
+
+### Automatic Update Notifications
+
+When running `fuego dev`, Fuego checks for updates in the background (once every 24 hours) and displays a notification if a new version is available:
+
+```
+  Fuego Development Server
+
+  Update: A new version of Fuego is available: v0.4.3 -> v0.5.0
+  Run 'fuego upgrade' to upgrade.
+
+  -> Generating routes...
+```
+
+### Rollback
+
+Fuego automatically backs up your current binary before upgrading. If something goes wrong, you can restore it:
+
+```bash
+fuego upgrade --rollback
+```
+
+The backup is stored at `~/.cache/fuego/fuego.backup`.
+
+<Info>
+The self-update feature downloads binaries directly from GitHub releases. No additional package managers are required.
+</Info>
+
+---
+
 ## Global Flags
 
 These flags are available on all commands:

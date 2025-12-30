@@ -7,44 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2025-12-30
+
 ### Added
 
-- **Dynamic Page Routes with Parameters**
+- **Self-Update Command (`fuego upgrade`)**
+  - Check for and install new versions directly from CLI
+  - `fuego upgrade` - Upgrade to latest stable version
+  - `fuego upgrade --check` - Check for updates without installing
+  - `fuego upgrade --version v0.5.0` - Install specific version
+  - `fuego upgrade --prerelease` - Include prerelease versions
+  - `fuego upgrade --rollback` - Restore previous version from backup
+  - Automatic backup before upgrade to `~/.cache/fuego/fuego.backup`
+  - SHA256 checksum verification for downloaded binaries
+  - Background update check when running `fuego dev` (once per 24 hours)
+
+### Changed
+
+- **Documentation domain updated to `fuego.build`**
+  - All documentation URLs now point to https://fuego.build
+  - Updated README.md, AGENTS.md, and llms.txt
+  - Updated GitHub repository homepage URL
+
+## [0.9.0] - 2025-12-30
+
+### Added
+
+- **Dynamic Page Routes with Bracket Notation**
   - Page templates in bracket directories (e.g., `[slug]`, `[id]`) are now properly detected
   - URL parameters are automatically wired to `Page()` function parameters
   - Support for `Page(slug string)`, `Page(id, name string)`, and complex signatures
   - Catch-all routes (`[...slug]`) and optional catch-all (`[[...slug]]`) supported
 
-- **Symlink System for Bracket Directories**
-  - Automatic creation of symlinks for directories with brackets (Go import path restriction)
-  - `[slug]` → `_slug`, `[...path]` → `_catchall_path`, `[[...cat]]` → `_opt_catchall_cat`
-  - Symlinks are created during `fuego dev` and `fuego build`
+## [0.8.0] - 2025-12-30
 
-- **Parameter Validation Warnings**
-  - Warnings displayed when URL parameters don't match `Page()` parameters
-  - Warnings when `Page()` accepts parameters not in the URL path
-  - Pages still render with zero values for unmatched parameters
+### Added
 
-- **Generator Schema Version**
-  - Added `GeneratorSchemaVersion` for tracking generated code compatibility
-  - Version header in generated `fuego_routes.go` files
-
-### Changed
-
-- **Build Command Improvements**
-  - `fuego build` now regenerates routes before building
-  - Ensures generated routes file is always up-to-date
-
-- **Page Validation**
-  - Updated to accept both `Page()` and `Page(params...)` signatures
-  - Backward compatible with existing pages
-
-### Fixed
-
-- **Bug: Dynamic Page Routes Not Detected** ([#issue])
-  - Pages in bracket directories like `app/posts/[slug]/page.templ` are now detected
-  - Route generation creates proper handlers with parameter extraction
-  - Import paths use symlinks to work around Go's bracket restriction
+- **Automatic OpenAPI 3.1 Specification Generation**
+  - `fuego openapi generate` - Generate OpenAPI spec from routes
+  - `fuego openapi serve` - Serve Swagger UI for interactive API exploration
+  - Automatic documentation extraction from handler comments
+  - Tags derived from directory structure
+  - Path parameters detected from `[param]` segments
 
 ## [0.7.4] - 2024-12-30
 

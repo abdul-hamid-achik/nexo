@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 )
 
 // jsonOutput is the global flag for JSON output mode
@@ -96,6 +97,18 @@ type InfoOutput struct {
 	Middleware []MiddlewareOutput `json:"middleware,omitempty"`
 	Proxy      *ProxyOutput       `json:"proxy,omitempty"`
 	RouteCount int                `json:"route_count"`
+}
+
+// UpgradeOutput represents the JSON output for the upgrade command
+type UpgradeOutput struct {
+	CurrentVersion  string    `json:"current_version"`
+	LatestVersion   string    `json:"latest_version,omitempty"`
+	UpToDate        bool      `json:"up_to_date,omitempty"`
+	UpdateAvailable bool      `json:"update_available,omitempty"`
+	UpgradeComplete bool      `json:"upgrade_complete,omitempty"`
+	ReleaseNotes    string    `json:"release_notes,omitempty"`
+	PublishedAt     time.Time `json:"published_at,omitempty"`
+	BackupPath      string    `json:"backup_path,omitempty"`
 }
 
 // printJSON outputs data as formatted JSON to stdout

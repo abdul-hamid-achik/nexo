@@ -355,39 +355,39 @@ middleware:
 
 ## Documentation
 
-Full documentation is available at [gofuego.dev](https://gofuego.dev).
+Full documentation is available at [fuego.build](https://fuego.build).
 
 **Getting Started:**
-- [Quick Start](https://gofuego.dev/docs/getting-started/quickstart)
-- [Familiar Patterns](https://gofuego.dev/docs/getting-started/familiar-patterns)
+- [Quick Start](https://fuego.build/docs/getting-started/quickstart)
+- [Familiar Patterns](https://fuego.build/docs/getting-started/familiar-patterns)
 
 **Core Concepts:**
-- [File-based Routing](https://gofuego.dev/docs/routing/file-based)
-- [Middleware](https://gofuego.dev/docs/middleware/overview)
-- [Proxy](https://gofuego.dev/docs/middleware/proxy)
-- [Templates](https://gofuego.dev/docs/core-concepts/templates)
-- [Static Files](https://gofuego.dev/docs/core-concepts/static-files)
+- [File-based Routing](https://fuego.build/docs/routing/file-based)
+- [Middleware](https://fuego.build/docs/middleware/overview)
+- [Proxy](https://fuego.build/docs/middleware/proxy)
+- [Templates](https://fuego.build/docs/core-concepts/templates)
+- [Static Files](https://fuego.build/docs/core-concepts/static-files)
 
 **Frontend:**
-- [HTMX Integration](https://gofuego.dev/docs/frontend/htmx)
-- [Tailwind CSS](https://gofuego.dev/docs/frontend/tailwind)
-- [Forms](https://gofuego.dev/docs/frontend/forms)
+- [HTMX Integration](https://fuego.build/docs/frontend/htmx)
+- [Tailwind CSS](https://fuego.build/docs/frontend/tailwind)
+- [Forms](https://fuego.build/docs/frontend/forms)
 
 **Guides:**
-- [Examples](https://gofuego.dev/docs/guides/examples) - Working code examples for common patterns
-- [Authentication](https://gofuego.dev/docs/guides/authentication)
-- [Database](https://gofuego.dev/docs/guides/database)
-- [Deployment](https://gofuego.dev/docs/guides/deployment)
+- [Examples](https://fuego.build/docs/guides/examples) - Working code examples for common patterns
+- [Authentication](https://fuego.build/docs/guides/authentication)
+- [Database](https://fuego.build/docs/guides/database)
+- [Deployment](https://fuego.build/docs/guides/deployment)
 
 **API Reference:**
-- [Overview](https://gofuego.dev/docs/api/overview) - Quick reference tables for all types
-- [App](https://gofuego.dev/docs/api/app) - Application lifecycle and routing
-- [Context](https://gofuego.dev/docs/api/context) - Request/response methods
-- [Config](https://gofuego.dev/docs/api/config) - Configuration options
-- [Middleware](https://gofuego.dev/docs/api/middleware) - Built-in middleware reference
-- [Proxy](https://gofuego.dev/docs/api/proxy) - Request interception
-- [Errors](https://gofuego.dev/docs/api/errors) - Error handling helpers
-- [CLI](https://gofuego.dev/docs/api/cli) - Command-line interface
+- [Overview](https://fuego.build/docs/api/overview) - Quick reference tables for all types
+- [App](https://fuego.build/docs/api/app) - Application lifecycle and routing
+- [Context](https://fuego.build/docs/api/context) - Request/response methods
+- [Config](https://fuego.build/docs/api/config) - Configuration options
+- [Middleware](https://fuego.build/docs/api/middleware) - Built-in middleware reference
+- [Proxy](https://fuego.build/docs/api/proxy) - Request interception
+- [Errors](https://fuego.build/docs/api/errors) - Error handling helpers
+- [CLI](https://fuego.build/docs/api/cli) - Command-line interface
 
 ## Development
 

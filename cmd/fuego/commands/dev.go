@@ -207,6 +207,9 @@ func runDev(cmd *cobra.Command, args []string) {
 
 	fmt.Printf("\n  %s Development Server\n\n", cyan("Fuego"))
 
+	// Check for updates in the background (non-blocking)
+	go CheckForUpdateInBackground()
+
 	// Check for main.go or app directory
 	if _, err := os.Stat("main.go"); os.IsNotExist(err) {
 		fmt.Printf("  %s No main.go found in current directory\n", red("Error:"))

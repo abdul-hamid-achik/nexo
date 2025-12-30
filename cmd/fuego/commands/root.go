@@ -21,6 +21,7 @@ Quick Start:
   fuego build          Build for production
   fuego routes         List all registered routes
   fuego openapi        Generate OpenAPI specifications
+  fuego upgrade        Upgrade to the latest version
 
 Documentation: https://github.com/abdul-hamid-achik/fuego`,
 	Version: version.GetVersion(),
