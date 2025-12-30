@@ -130,7 +130,6 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rw := newResponseWriter(w)
 
 	var proxyAction *ProxyAction
-	var proxyHandled bool
 
 	// Execute proxy if configured
 	if a.routeTree.HasProxy() {
@@ -147,8 +146,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !result.ContinueToRouter {
-			// Proxy handled the request (redirect or response)
-			proxyHandled = true
+			// Proxy handled the request (redirect or response) - log and return
 			a.logRequest(r, rw, start, proxyAction, nil)
 			return
 		}
@@ -160,10 +158,8 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Continue to router
 	a.router.ServeHTTP(rw, r)
 
-	// Log the request (only if not already logged by proxy)
-	if !proxyHandled {
-		a.logRequest(r, rw, start, proxyAction, nil)
-	}
+	// Log the request
+	a.logRequest(r, rw, start, proxyAction, nil)
 }
 
 // logRequest logs a request using the app-level logger if enabled.

@@ -69,15 +69,15 @@ func TestDefaultRequestLoggerConfig(t *testing.T) {
 	origDev := os.Getenv("FUEGO_DEV")
 	origEnv := os.Getenv("GO_ENV")
 	defer func() {
-		os.Setenv("FUEGO_LOG_LEVEL", origLevel)
-		os.Setenv("FUEGO_DEV", origDev)
-		os.Setenv("GO_ENV", origEnv)
+		_ = os.Setenv("FUEGO_LOG_LEVEL", origLevel)
+		_ = os.Setenv("FUEGO_DEV", origDev)
+		_ = os.Setenv("GO_ENV", origEnv)
 	}()
 
 	t.Run("default config", func(t *testing.T) {
-		os.Unsetenv("FUEGO_LOG_LEVEL")
-		os.Unsetenv("FUEGO_DEV")
-		os.Unsetenv("GO_ENV")
+		_ = os.Unsetenv("FUEGO_LOG_LEVEL")
+		_ = os.Unsetenv("FUEGO_DEV")
+		_ = os.Unsetenv("GO_ENV")
 
 		config := DefaultRequestLoggerConfig()
 
