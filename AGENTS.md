@@ -785,6 +785,46 @@ title := c.FormValue("title")
 - `c.Get("key")` - Retrieve value from context
 - `c.GetString("key")` - Get as string
 - `c.GetInt("key")` - Get as int
+- `c.GetBool("key")` - Get as bool
+
+### Server-Sent Events (SSE)
+
+Fuego provides built-in SSE support for real-time streaming:
+
+```go
+func Get(c *fuego.Context) error {
+    sse, err := c.SSE()
+    if err != nil {
+        return err
+    }
+    defer sse.Close()
+
+    // Send events
+    sse.Send("message", "Hello, World!")
+    sse.SendJSON("update", map[string]any{"count": 42})
+    
+    // Stream logs in a loop
+    for {
+        if sse.IsClosed() {
+            break
+        }
+        sse.SendData("ping")
+        time.Sleep(time.Second)
+    }
+    
+    return nil
+}
+```
+
+**SSEWriter Methods:**
+- `sse.Send(event, data)` - Send event with name and data
+- `sse.SendData(data)` - Send data without event name
+- `sse.SendJSON(event, v)` - Send JSON-encoded data
+- `sse.SendComment(comment)` - Send SSE comment (keep-alive)
+- `sse.SendRetry(ms)` - Set client reconnect interval
+- `sse.SendID(id)` - Set event ID for resumption
+- `sse.IsClosed()` - Check if client disconnected
+- `sse.Close()` - Close the SSE connection
 
 ## Context7 Integration
 

@@ -68,9 +68,12 @@ The Fuego framework provides a clean, intuitive API for building web application
 | `c.Query(name)` | Get query string value |
 | `c.Header(name)` | Get request header |
 | `c.Bind(&struct)` | Parse JSON body into struct |
+| `c.Cookie(name)` | Get cookie value |
 | `c.JSON(status, data)` | Return JSON response |
 | `c.HTML(status, html)` | Return HTML response |
 | `c.Redirect(status, url)` | Redirect to URL |
+| `c.SetCookie(cookie)` | Set response cookie |
+| `c.SSE()` | Create SSE writer for streaming |
 | `c.Set/Get(key, value)` | Context storage |
 
 ### Built-in Middleware

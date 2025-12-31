@@ -23,6 +23,9 @@ This guide provides comprehensive, production-ready examples for building applic
   <Card title="Proxy" icon="shield" href="#proxy-patterns">
     URL rewriting, auth checks, rate limiting
   </Card>
+  <Card title="Server-Sent Events" icon="bolt" href="#server-sent-events">
+    Real-time streaming with SSE
+  </Card>
 </CardGroup>
 
 ---
@@ -1493,6 +1496,286 @@ curl http://localhost:8080/api/admin \
 for i in {1..105}; do curl -s http://localhost:8080/api/users; done
 # After 100 requests: 429 Too Many Requests
 ```
+
+---
+
+## Server-Sent Events
+
+Real-time streaming with Server-Sent Events for log streaming, progress updates, and live notifications.
+
+### Project Structure
+
+<FileTree>
+  <Folder name="sse-example" defaultOpen>
+    <Folder name="app" defaultOpen>
+      <Folder name="api" defaultOpen>
+        <Folder name="events">
+          <File name="route.go" />
+        </Folder>
+        <Folder name="logs">
+          <File name="route.go" />
+        </Folder>
+        <Folder name="progress">
+          <File name="route.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+    <File name="main.go" />
+  </Folder>
+</FileTree>
+
+### Basic SSE Endpoint
+
+```go
+// app/api/events/route.go
+package events
+
+import (
+    "fmt"
+    "time"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// GET /api/events - Stream events to client
+func Get(c *fuego.Context) error {
+    sse, err := c.SSE()
+    if err != nil {
+        return err
+    }
+    defer sse.Close()
+
+    // Send initial connection event
+    sse.Send("connected", "Connection established")
+
+    // Stream events every second
+    ticker := time.NewTicker(time.Second)
+    defer ticker.Stop()
+
+    count := 0
+    for {
+        select {
+        case <-ticker.C:
+            if sse.IsClosed() {
+                return nil // Client disconnected
+            }
+            
+            count++
+            sse.SendJSON("tick", map[string]any{
+                "count":     count,
+                "timestamp": time.Now().Format(time.RFC3339),
+            })
+            
+            if count >= 10 {
+                sse.Send("complete", "Stream finished")
+                return nil
+            }
+        }
+    }
+}
+```
+
+### Log Streaming
+
+```go
+// app/api/logs/route.go
+package logs
+
+import (
+    "bufio"
+    "os"
+    "time"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// GET /api/logs - Stream log file in real-time
+func Get(c *fuego.Context) error {
+    sse, err := c.SSE()
+    if err != nil {
+        return err
+    }
+    defer sse.Close()
+
+    logFile := c.QueryDefault("file", "/var/log/app.log")
+    
+    file, err := os.Open(logFile)
+    if err != nil {
+        sse.Send("error", "Failed to open log file")
+        return nil
+    }
+    defer file.Close()
+
+    // Seek to end of file
+    file.Seek(0, 2)
+    
+    reader := bufio.NewReader(file)
+    
+    for {
+        if sse.IsClosed() {
+            return nil
+        }
+        
+        line, err := reader.ReadString('\n')
+        if err != nil {
+            // No new content, wait and retry
+            time.Sleep(100 * time.Millisecond)
+            continue
+        }
+        
+        sse.SendJSON("log", map[string]any{
+            "line":      line,
+            "timestamp": time.Now().Format(time.RFC3339),
+        })
+    }
+}
+```
+
+### Progress Updates
+
+```go
+// app/api/progress/route.go
+package progress
+
+import (
+    "time"
+    
+    "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+)
+
+// GET /api/progress - Stream task progress
+func Get(c *fuego.Context) error {
+    sse, err := c.SSE()
+    if err != nil {
+        return err
+    }
+    defer sse.Close()
+
+    taskID := c.QueryDefault("task", "default")
+    
+    // Simulate a long-running task
+    steps := []string{
+        "Initializing...",
+        "Downloading dependencies...",
+        "Compiling source code...",
+        "Running tests...",
+        "Building artifacts...",
+        "Deploying to production...",
+    }
+    
+    for i, step := range steps {
+        if sse.IsClosed() {
+            return nil
+        }
+        
+        progress := (i + 1) * 100 / len(steps)
+        
+        sse.SendJSON("progress", map[string]any{
+            "task_id":  taskID,
+            "step":     i + 1,
+            "total":    len(steps),
+            "percent":  progress,
+            "message":  step,
+        })
+        
+        // Simulate work
+        time.Sleep(time.Second)
+    }
+    
+    sse.SendJSON("complete", map[string]any{
+        "task_id": taskID,
+        "status":  "success",
+        "message": "Task completed successfully!",
+    })
+    
+    return nil
+}
+```
+
+### Client-Side JavaScript
+
+```html
+<!-- Connect to SSE endpoint -->
+<div id="events"></div>
+<div id="progress-bar" class="w-full bg-gray-200 rounded">
+    <div id="progress" class="bg-blue-600 h-4 rounded" style="width: 0%"></div>
+</div>
+<div id="status"></div>
+
+<script>
+// Basic events
+const eventSource = new EventSource('/api/events');
+
+eventSource.addEventListener('connected', (e) => {
+    console.log('Connected:', e.data);
+});
+
+eventSource.addEventListener('tick', (e) => {
+    const data = JSON.parse(e.data);
+    document.getElementById('events').innerHTML += 
+        `<div>Tick ${data.count} at ${data.timestamp}</div>`;
+});
+
+eventSource.addEventListener('complete', (e) => {
+    console.log('Stream complete');
+    eventSource.close();
+});
+
+eventSource.onerror = () => {
+    console.log('Connection error, reconnecting...');
+};
+
+// Progress tracking
+const progressSource = new EventSource('/api/progress?task=build-123');
+
+progressSource.addEventListener('progress', (e) => {
+    const data = JSON.parse(e.data);
+    document.getElementById('progress').style.width = `${data.percent}%`;
+    document.getElementById('status').textContent = data.message;
+});
+
+progressSource.addEventListener('complete', (e) => {
+    const data = JSON.parse(e.data);
+    document.getElementById('status').textContent = data.message;
+    progressSource.close();
+});
+</script>
+```
+
+### SSE with HTMX
+
+HTMX has built-in SSE support:
+
+```html
+<!-- Auto-connect and update content -->
+<div hx-ext="sse" sse-connect="/api/events" sse-swap="tick">
+    Waiting for events...
+</div>
+
+<!-- Multiple event types -->
+<div hx-ext="sse" sse-connect="/api/logs">
+    <div id="log-container" sse-swap="log" hx-swap="beforeend">
+        <!-- Log lines appear here -->
+    </div>
+    <div sse-swap="error" class="text-red-500">
+        <!-- Error messages appear here -->
+    </div>
+</div>
+```
+
+### SSE Method Reference
+
+| Method | Description |
+|--------|-------------|
+| `c.SSE()` | Create SSE writer (sets headers, returns `*SSEWriter`) |
+| `sse.Send(event, data)` | Send named event with string data |
+| `sse.SendData(data)` | Send data without event name |
+| `sse.SendJSON(event, v)` | Send JSON-encoded data |
+| `sse.SendComment(comment)` | Send SSE comment (keep-alive) |
+| `sse.SendRetry(ms)` | Set client reconnection interval |
+| `sse.SendID(id)` | Set event ID for resumption |
+| `sse.IsClosed()` | Check if client disconnected |
+| `sse.Close()` | Close the connection |
 
 ---
 

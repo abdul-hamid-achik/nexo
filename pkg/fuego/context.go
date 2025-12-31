@@ -381,3 +381,68 @@ func (c *Context) Render(status int, component templ.Component) error {
 func (c *Context) RenderOK(component templ.Component) error {
 	return c.Render(http.StatusOK, component)
 }
+
+// ---------- Cookies ----------
+
+// Cookie returns a cookie value by name.
+// Returns empty string if the cookie doesn't exist.
+func (c *Context) Cookie(name string) string {
+	cookie, err := c.Request.Cookie(name)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+// SetCookie sets a cookie on the response.
+func (c *Context) SetCookie(cookie *http.Cookie) {
+	http.SetCookie(c.Response, cookie)
+}
+
+// ---------- SSE (Server-Sent Events) ----------
+
+// SSE returns an SSEWriter for streaming Server-Sent Events.
+// Sets appropriate headers and returns a writer for sending events.
+//
+// Example:
+//
+//	func Get(c *fuego.Context) error {
+//	    sse, err := c.SSE()
+//	    if err != nil {
+//	        return err
+//	    }
+//
+//	    for i := 0; i < 10; i++ {
+//	        if sse.IsClosed() {
+//	            break // Client disconnected
+//	        }
+//	        sse.Send("message", fmt.Sprintf("Event %d", i))
+//	        time.Sleep(time.Second)
+//	    }
+//	    return nil
+//	}
+func (c *Context) SSE() (*SSEWriter, error) {
+	flusher, ok := c.Response.(http.Flusher)
+	if !ok {
+		return nil, NewHTTPError(http.StatusInternalServerError, "streaming not supported")
+	}
+
+	c.SetHeader("Content-Type", "text/event-stream")
+	c.SetHeader("Cache-Control", "no-cache")
+	c.SetHeader("Connection", "keep-alive")
+	c.SetHeader("X-Accel-Buffering", "no") // Disable nginx buffering
+	c.written = true
+
+	return &SSEWriter{w: c.Response, flusher: flusher}, nil
+}
+
+// ---------- Additional Context Helpers ----------
+
+// GetBool retrieves a bool value from the request context.
+// Returns false if the key doesn't exist or is not a bool.
+func (c *Context) GetBool(key string) bool {
+	if val, ok := c.store[key].(bool); ok {
+		return val
+	}
+	return false
+}

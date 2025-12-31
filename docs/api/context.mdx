@@ -344,6 +344,111 @@ func Get(c *fuego.Context) error {
 }
 ```
 
+## Server-Sent Events (SSE)
+
+Stream real-time events to clients using Server-Sent Events:
+
+```go
+func Get(c *fuego.Context) error {
+    sse, err := c.SSE()
+    if err != nil {
+        return err
+    }
+    defer sse.Close()
+
+    // Send a named event
+    sse.Send("message", "Hello, World!")
+
+    // Send JSON data
+    sse.SendJSON("update", map[string]any{"count": 42})
+
+    // Stream events in a loop
+    for i := 0; i < 10; i++ {
+        if sse.IsClosed() {
+            break // Client disconnected
+        }
+        sse.SendData(fmt.Sprintf("Event %d", i))
+        time.Sleep(time.Second)
+    }
+
+    return nil
+}
+```
+
+### SSEWriter Methods
+
+| Method | Description |
+|--------|-------------|
+| `sse.Send(event, data)` | Send a named event with string data |
+| `sse.SendData(data)` | Send data without an event name |
+| `sse.SendJSON(event, v)` | Send JSON-encoded data as a named event |
+| `sse.SendComment(comment)` | Send an SSE comment (useful for keep-alive) |
+| `sse.SendRetry(milliseconds)` | Set the client reconnection interval |
+| `sse.SendID(id)` | Set the event ID (for resumption) |
+| `sse.IsClosed()` | Check if the client has disconnected |
+| `sse.Close()` | Close the SSE connection |
+
+### Use Cases
+
+**Real-time log streaming:**
+```go
+func Get(c *fuego.Context) error {
+    sse, err := c.SSE()
+    if err != nil {
+        return err
+    }
+    defer sse.Close()
+
+    logChan := subscribeToLogs()
+    for log := range logChan {
+        if sse.IsClosed() {
+            break
+        }
+        sse.SendJSON("log", log)
+    }
+    return nil
+}
+```
+
+**Progress updates:**
+```go
+func Get(c *fuego.Context) error {
+    sse, err := c.SSE()
+    if err != nil {
+        return err
+    }
+    defer sse.Close()
+
+    for progress := 0; progress <= 100; progress += 10 {
+        if sse.IsClosed() {
+            break
+        }
+        sse.SendJSON("progress", map[string]int{"percent": progress})
+        time.Sleep(500 * time.Millisecond)
+    }
+    sse.Send("complete", "Task finished!")
+    return nil
+}
+```
+
+**Client-side JavaScript:**
+```javascript
+const eventSource = new EventSource('/api/events');
+
+eventSource.addEventListener('message', (e) => {
+    console.log('Message:', e.data);
+});
+
+eventSource.addEventListener('update', (e) => {
+    const data = JSON.parse(e.data);
+    console.log('Update:', data);
+});
+
+eventSource.onerror = () => {
+    console.log('Connection lost, reconnecting...');
+};
+```
+
 ## Complete API Reference
 
 <AccordionGroup>

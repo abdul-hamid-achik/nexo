@@ -194,7 +194,40 @@ c.Set("key", value)              // Store value in context
 c.Get("key")                     // Retrieve value (interface{})
 c.GetString("key")               // Get as string
 c.GetInt("key")                  // Get as int
+c.GetBool("key")                 // Get as bool
 ```
+
+### Server-Sent Events (SSE)
+
+```go
+func Get(c *fuego.Context) error {
+    sse, err := c.SSE()
+    if err != nil {
+        return err
+    }
+    defer sse.Close()
+
+    sse.Send("message", "Hello!")           // Named event
+    sse.SendData("ping")                    // Data-only event
+    sse.SendJSON("update", map[string]any{"count": 42}) // JSON event
+
+    for !sse.IsClosed() {
+        sse.SendData(time.Now().String())
+        time.Sleep(time.Second)
+    }
+    return nil
+}
+```
+
+**SSEWriter methods:**
+- `sse.Send(event, data)` - Named event with data
+- `sse.SendData(data)` - Data without event name
+- `sse.SendJSON(event, v)` - JSON-encoded event
+- `sse.SendComment(comment)` - SSE comment (keep-alive)
+- `sse.SendRetry(ms)` - Set reconnect interval
+- `sse.SendID(id)` - Set event ID
+- `sse.IsClosed()` - Check if client disconnected
+- `sse.Close()` - Close connection
 
 ## Built-in Middleware
 

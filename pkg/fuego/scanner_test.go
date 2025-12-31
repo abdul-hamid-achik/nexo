@@ -981,7 +981,7 @@ func Get(c *fuego.Context) error {
 	}
 
 	// Verify middleware was registered
-	chain := tree.GetMiddlewareChain("/api")
+	chain := tree.GetMiddlewareChain("/api", "api")
 	if len(chain) != 1 {
 		t.Errorf("expected 1 middleware in chain, got %d", len(chain))
 	}

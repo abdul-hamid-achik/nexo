@@ -722,3 +722,91 @@ func TestContext_GetInt_NonInt(t *testing.T) {
 		t.Errorf("expected 0 for non-int value, got %d", result)
 	}
 }
+
+func TestContext_Cookie(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: "abc123"})
+	req.AddCookie(&http.Cookie{Name: "user", Value: "fuego"})
+	w := httptest.NewRecorder()
+	c := NewContext(w, req)
+
+	if c.Cookie("session") != "abc123" {
+		t.Errorf("expected 'abc123', got '%s'", c.Cookie("session"))
+	}
+
+	if c.Cookie("user") != "fuego" {
+		t.Errorf("expected 'fuego', got '%s'", c.Cookie("user"))
+	}
+}
+
+func TestContext_Cookie_Missing(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	c := NewContext(w, req)
+
+	if c.Cookie("nonexistent") != "" {
+		t.Errorf("expected empty string for missing cookie, got '%s'", c.Cookie("nonexistent"))
+	}
+}
+
+func TestContext_SetCookie(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	c := NewContext(w, req)
+
+	cookie := &http.Cookie{
+		Name:     "session",
+		Value:    "xyz789",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		MaxAge:   3600,
+	}
+	c.SetCookie(cookie)
+
+	// Check that Set-Cookie header was set
+	setCookie := w.Header().Get("Set-Cookie")
+	if setCookie == "" {
+		t.Error("expected Set-Cookie header to be set")
+	}
+
+	if !strings.Contains(setCookie, "session=xyz789") {
+		t.Errorf("expected cookie to contain 'session=xyz789', got '%s'", setCookie)
+	}
+
+	if !strings.Contains(setCookie, "HttpOnly") {
+		t.Errorf("expected cookie to contain 'HttpOnly', got '%s'", setCookie)
+	}
+
+	if !strings.Contains(setCookie, "Secure") {
+		t.Errorf("expected cookie to contain 'Secure', got '%s'", setCookie)
+	}
+}
+
+func TestContext_GetBool(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	c := NewContext(w, req)
+
+	c.Set("active", true)
+	c.Set("disabled", false)
+
+	if !c.GetBool("active") {
+		t.Error("expected GetBool('active') to be true")
+	}
+
+	if c.GetBool("disabled") {
+		t.Error("expected GetBool('disabled') to be false")
+	}
+
+	// Non-existent key should return false
+	if c.GetBool("missing") {
+		t.Error("expected GetBool('missing') to be false")
+	}
+
+	// Non-bool value should return false
+	c.Set("text", "hello")
+	if c.GetBool("text") {
+		t.Error("expected GetBool('text') to be false for non-bool value")
+	}
+}

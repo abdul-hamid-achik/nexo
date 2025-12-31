@@ -28,6 +28,11 @@ type Route struct {
 	// FilePath is the source file path (for debugging/display)
 	FilePath string
 
+	// Scope is the filesystem scope for middleware matching.
+	// Preserves route groups like "(dashboard)" for proper middleware isolation.
+	// Example: "(dashboard)/apps" for app/(dashboard)/apps/route.go
+	Scope string
+
 	// Priority determines route matching order (higher = matched first)
 	// Static: 100, Dynamic: 50, CatchAll: 10, OptionalCatchAll: 5
 	Priority int
@@ -38,17 +43,19 @@ type Route struct {
 
 // RouteTree holds all discovered routes and middleware.
 type RouteTree struct {
-	routes      []*Route
-	middlewares map[string][]MiddlewareFunc // path -> middlewares
-	proxy       ProxyFunc                   // proxy function (from app/proxy.go)
-	proxyConfig *ProxyConfig                // proxy configuration (optional)
+	routes           []*Route
+	middlewares      map[string][]MiddlewareFunc // path -> middlewares
+	middlewareScopes map[string]string           // path -> filesystem scope for route groups
+	proxy            ProxyFunc                   // proxy function (from app/proxy.go)
+	proxyConfig      *ProxyConfig                // proxy configuration (optional)
 }
 
 // NewRouteTree creates a new RouteTree.
 func NewRouteTree() *RouteTree {
 	return &RouteTree{
-		routes:      make([]*Route, 0),
-		middlewares: make(map[string][]MiddlewareFunc),
+		routes:           make([]*Route, 0),
+		middlewares:      make(map[string][]MiddlewareFunc),
+		middlewareScopes: make(map[string]string),
 	}
 }
 
@@ -57,9 +64,19 @@ func (rt *RouteTree) AddRoute(route *Route) {
 	rt.routes = append(rt.routes, route)
 }
 
-// AddMiddleware adds middleware for a path prefix.
-func (rt *RouteTree) AddMiddleware(path string, mw MiddlewareFunc) {
+// AddMiddleware adds middleware for a path prefix with filesystem scope.
+// The scope is used to match middleware to routes within the same route group.
+// For route groups like "(dashboard)", middleware only applies to routes under that group.
+//
+// Parameters:
+//   - path: The URL path prefix (e.g., "/api", "" for root)
+//   - scope: The filesystem scope preserving route groups (e.g., "(dashboard)", "api")
+//   - mw: The middleware function
+func (rt *RouteTree) AddMiddleware(path, scope string, mw MiddlewareFunc) {
 	rt.middlewares[path] = append(rt.middlewares[path], mw)
+	if scope != "" {
+		rt.middlewareScopes[path] = scope
+	}
 }
 
 // SetProxy sets the proxy function and optional configuration.
@@ -109,10 +126,26 @@ func (rt *RouteTree) Routes() []*Route {
 	return sorted
 }
 
-// GetMiddlewareChain builds the middleware chain for a given path.
-// Middleware is inherited from parent paths.
-func (rt *RouteTree) GetMiddlewareChain(pattern string) []MiddlewareFunc {
+// GetMiddlewareChain builds the middleware chain for a given route.
+// Uses the route's scope to determine which middleware applies.
+// Middleware from route groups only applies to routes within that group.
+//
+// Parameters:
+//   - pattern: The URL pattern (e.g., "/api/users", "/apps")
+//   - routeScope: The filesystem scope of the route (e.g., "(dashboard)/apps", "api/users")
+func (rt *RouteTree) GetMiddlewareChain(pattern string, routeScope string) []MiddlewareFunc {
 	var chain []MiddlewareFunc
+
+	// First, check for root-level middleware (empty string or "/" key)
+	for _, rootKey := range []string{"", "/"} {
+		if mws, ok := rt.middlewares[rootKey]; ok {
+			scope := rt.middlewareScopes[rootKey]
+			// Root middleware applies if: no scope OR route is under that scope
+			if scope == "" || strings.HasPrefix(routeScope, scope) {
+				chain = append(chain, mws...)
+			}
+		}
+	}
 
 	// Build chain from root to specific route
 	segments := strings.Split(pattern, "/")
@@ -125,7 +158,11 @@ func (rt *RouteTree) GetMiddlewareChain(pattern string) []MiddlewareFunc {
 		currentPath += "/" + seg
 
 		if mws, ok := rt.middlewares[currentPath]; ok {
-			chain = append(chain, mws...)
+			scope := rt.middlewareScopes[currentPath]
+			// Middleware applies if: no scope OR route is under that scope
+			if scope == "" || strings.HasPrefix(routeScope, scope) {
+				chain = append(chain, mws...)
+			}
 		}
 	}
 
@@ -139,7 +176,7 @@ func (rt *RouteTree) Mount(router chi.Router, globalMiddlewares []MiddlewareFunc
 	for _, route := range routes {
 		// Build middleware chain: global -> path-based -> route-specific
 		middlewares := append([]MiddlewareFunc{}, globalMiddlewares...)
-		middlewares = append(middlewares, rt.GetMiddlewareChain(route.Pattern)...)
+		middlewares = append(middlewares, rt.GetMiddlewareChain(route.Pattern, route.Scope)...)
 		middlewares = append(middlewares, route.Middlewares...)
 
 		handler := rt.wrapHandler(route.Handler, middlewares)

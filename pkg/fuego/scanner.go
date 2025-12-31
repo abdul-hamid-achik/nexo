@@ -114,8 +114,11 @@ func (s *Scanner) registerAPIRoute(tree *RouteTree, filePath string) error {
 		return fmt.Errorf("failed to parse %s: %w", filePath, err)
 	}
 
-	// Get the route pattern from the file path
+	// Get the URL route pattern from the file path
 	pattern := s.pathToRoute(filePath)
+
+	// Get the filesystem scope (preserves route groups for middleware matching)
+	scope := s.pathToScope(filePath)
 
 	// Find all exported functions that match HTTP method names
 	for _, decl := range file.Decls {
@@ -149,6 +152,7 @@ func (s *Scanner) registerAPIRoute(tree *RouteTree, filePath string) error {
 			Pattern:  pattern,
 			Method:   method,
 			FilePath: filePath,
+			Scope:    scope,
 			Priority: CalculatePriority(pattern),
 			Handler:  s.createPlaceholderHandler(filePath, fn.Name.Name),
 		}
@@ -156,7 +160,7 @@ func (s *Scanner) registerAPIRoute(tree *RouteTree, filePath string) error {
 		tree.AddRoute(route)
 
 		if s.verbose {
-			fmt.Printf("  Registered: %s %s (%s)\n", method, pattern, filePath)
+			fmt.Printf("  Registered: %s %s (scope: %s, file: %s)\n", method, pattern, scope, filePath)
 		}
 	}
 
@@ -171,11 +175,14 @@ func (s *Scanner) registerMiddleware(tree *RouteTree, filePath string) error {
 		return fmt.Errorf("failed to parse %s: %w", filePath, err)
 	}
 
-	// Get the path prefix this middleware applies to
+	// Get the URL path prefix (without route groups)
 	pathPrefix := s.pathToRoute(filePath)
 	if pathPrefix == "/" {
 		pathPrefix = ""
 	}
+
+	// Get the filesystem scope (preserves route groups for middleware matching)
+	scope := s.pathToScope(filePath)
 
 	// Look for the Middleware function
 	for _, decl := range file.Decls {
@@ -197,11 +204,11 @@ func (s *Scanner) registerMiddleware(tree *RouteTree, filePath string) error {
 			continue
 		}
 
-		// Register a placeholder middleware
-		tree.AddMiddleware(pathPrefix, s.createPlaceholderMiddleware(filePath))
+		// Register middleware with scope for proper route group isolation
+		tree.AddMiddleware(pathPrefix, scope, s.createPlaceholderMiddleware(filePath))
 
 		if s.verbose {
-			fmt.Printf("  Registered middleware: %s (%s)\n", pathPrefix, filePath)
+			fmt.Printf("  Registered middleware: %s (scope: %s, file: %s)\n", pathPrefix, scope, filePath)
 		}
 	}
 
@@ -252,6 +259,23 @@ func (s *Scanner) pathToRoute(filePath string) string {
 	}
 
 	return "/" + strings.Join(routeSegments, "/")
+}
+
+// pathToScope converts a file path to a middleware scope.
+// Unlike pathToRoute, this preserves route group markers like "(dashboard)".
+// This is used for matching middleware to routes within the same route group.
+//
+// Example: app/(dashboard)/apps/middleware.go -> "(dashboard)/apps"
+// Example: app/api/users/route.go -> "api/users"
+// Example: app/middleware.go -> ""
+func (s *Scanner) pathToScope(filePath string) string {
+	rel, err := filepath.Rel(s.appDir, filepath.Dir(filePath))
+	if err != nil || rel == "." {
+		return ""
+	}
+
+	// Normalize path separators to forward slashes
+	return strings.ReplaceAll(rel, string(filepath.Separator), "/")
 }
 
 // isValidHandlerSignature checks if a function has the signature:

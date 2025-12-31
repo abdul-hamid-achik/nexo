@@ -62,10 +62,10 @@ func TestRouteTree_AddMiddleware(t *testing.T) {
 		}
 	}
 
-	tree.AddMiddleware("/api", mw)
-	tree.AddMiddleware("/api/users", mw)
+	tree.AddMiddleware("/api", "api", mw)
+	tree.AddMiddleware("/api/users", "api/users", mw)
 
-	chain := tree.GetMiddlewareChain("/api/users/profile")
+	chain := tree.GetMiddlewareChain("/api/users/profile", "api/users/profile")
 
 	// Should have 2 middlewares: /api and /api/users
 	if len(chain) != 2 {
@@ -79,28 +79,28 @@ func TestRouteTree_GetMiddlewareChain_Inheritance(t *testing.T) {
 	// Track execution order
 	var order []string
 
-	tree.AddMiddleware("/api", func(next HandlerFunc) HandlerFunc {
+	tree.AddMiddleware("/api", "api", func(next HandlerFunc) HandlerFunc {
 		return func(c *Context) error {
 			order = append(order, "api")
 			return next(c)
 		}
 	})
 
-	tree.AddMiddleware("/api/v1", func(next HandlerFunc) HandlerFunc {
+	tree.AddMiddleware("/api/v1", "api/v1", func(next HandlerFunc) HandlerFunc {
 		return func(c *Context) error {
 			order = append(order, "v1")
 			return next(c)
 		}
 	})
 
-	tree.AddMiddleware("/api/v1/users", func(next HandlerFunc) HandlerFunc {
+	tree.AddMiddleware("/api/v1/users", "api/v1/users", func(next HandlerFunc) HandlerFunc {
 		return func(c *Context) error {
 			order = append(order, "users")
 			return next(c)
 		}
 	})
 
-	chain := tree.GetMiddlewareChain("/api/v1/users/profile")
+	chain := tree.GetMiddlewareChain("/api/v1/users/profile", "api/v1/users/profile")
 	if len(chain) != 3 {
 		t.Errorf("Expected 3 middlewares, got %d", len(chain))
 	}
@@ -189,7 +189,7 @@ func TestRouteTree_Mount_WithMiddleware(t *testing.T) {
 	}
 
 	// Add path-based middleware
-	tree.AddMiddleware("/api", func(next HandlerFunc) HandlerFunc {
+	tree.AddMiddleware("/api", "api", func(next HandlerFunc) HandlerFunc {
 		return func(c *Context) error {
 			c.SetHeader("X-API", "true")
 			return next(c)
@@ -200,6 +200,7 @@ func TestRouteTree_Mount_WithMiddleware(t *testing.T) {
 		Pattern:  "/api/health",
 		Method:   http.MethodGet,
 		Handler:  func(c *Context) error { return c.JSON(200, map[string]string{"status": "ok"}) },
+		Scope:    "api/health",
 		Priority: 100,
 	})
 
@@ -298,5 +299,160 @@ func TestRouteTree_AllHTTPMethods(t *testing.T) {
 		if w.Code != http.StatusNoContent && w.Code != http.StatusOK {
 			t.Errorf("Method %s: expected 204 or 200, got %d", method, w.Code)
 		}
+	}
+}
+
+func TestGetMiddlewareChain_RootMiddleware(t *testing.T) {
+	tree := NewRouteTree()
+
+	// Root middleware (empty scope) should apply to all routes
+	tree.AddMiddleware("/", "", func(next HandlerFunc) HandlerFunc {
+		return func(c *Context) error {
+			c.SetHeader("X-Root", "true")
+			return next(c)
+		}
+	})
+
+	// Should apply to any route scope
+	chain := tree.GetMiddlewareChain("/api/users", "api/users")
+	if len(chain) != 1 {
+		t.Errorf("expected 1 middleware for /api/users, got %d", len(chain))
+	}
+
+	chain = tree.GetMiddlewareChain("/dashboard", "(dashboard)")
+	if len(chain) != 1 {
+		t.Errorf("expected 1 middleware for /dashboard, got %d", len(chain))
+	}
+}
+
+func TestGetMiddlewareChain_RouteGroupMiddleware(t *testing.T) {
+	tree := NewRouteTree()
+
+	// Dashboard group middleware - should only apply to routes with (dashboard) scope
+	tree.AddMiddleware("/dashboard", "(dashboard)", func(next HandlerFunc) HandlerFunc {
+		return func(c *Context) error {
+			c.SetHeader("X-Dashboard", "true")
+			return next(c)
+		}
+	})
+
+	// Auth group middleware - should only apply to routes with (auth) scope
+	tree.AddMiddleware("/login", "(auth)", func(next HandlerFunc) HandlerFunc {
+		return func(c *Context) error {
+			c.SetHeader("X-Auth", "true")
+			return next(c)
+		}
+	})
+
+	// Route in dashboard group should get dashboard middleware
+	chain := tree.GetMiddlewareChain("/dashboard/apps", "(dashboard)/apps")
+	if len(chain) != 1 {
+		t.Errorf("expected 1 middleware for (dashboard)/apps, got %d", len(chain))
+	}
+
+	// Route in auth group should NOT get dashboard middleware
+	chain = tree.GetMiddlewareChain("/login", "(auth)/login")
+	if len(chain) != 1 {
+		t.Errorf("expected 1 middleware for (auth)/login, got %d", len(chain))
+	}
+
+	// Route without group should NOT get group middleware
+	chain = tree.GetMiddlewareChain("/api/health", "api/health")
+	if len(chain) != 0 {
+		t.Errorf("expected 0 middleware for api/health, got %d", len(chain))
+	}
+}
+
+func TestGetMiddlewareChain_MultipleRouteGroups(t *testing.T) {
+	tree := NewRouteTree()
+
+	// Root middleware
+	tree.AddMiddleware("/", "", func(next HandlerFunc) HandlerFunc {
+		return func(c *Context) error {
+			c.SetHeader("X-Root", "true")
+			return next(c)
+		}
+	})
+
+	// Dashboard group middleware
+	tree.AddMiddleware("/dashboard", "(dashboard)", func(next HandlerFunc) HandlerFunc {
+		return func(c *Context) error {
+			c.SetHeader("X-Dashboard", "true")
+			return next(c)
+		}
+	})
+
+	// Auth group middleware
+	tree.AddMiddleware("/auth", "(auth)", func(next HandlerFunc) HandlerFunc {
+		return func(c *Context) error {
+			c.SetHeader("X-Auth", "true")
+			return next(c)
+		}
+	})
+
+	// Dashboard route should get root + dashboard middleware
+	chain := tree.GetMiddlewareChain("/dashboard/apps", "(dashboard)/apps")
+	if len(chain) != 2 {
+		t.Errorf("expected 2 middleware for (dashboard)/apps, got %d", len(chain))
+	}
+
+	// Auth route should get root + auth middleware (NOT dashboard)
+	chain = tree.GetMiddlewareChain("/auth/login", "(auth)/login")
+	if len(chain) != 2 {
+		t.Errorf("expected 2 middleware for (auth)/login, got %d", len(chain))
+	}
+
+	// Non-group route should only get root middleware
+	chain = tree.GetMiddlewareChain("/api/health", "api/health")
+	if len(chain) != 1 {
+		t.Errorf("expected 1 middleware for api/health, got %d", len(chain))
+	}
+}
+
+func TestGetMiddlewareChain_NestedWithRouteGroup(t *testing.T) {
+	tree := NewRouteTree()
+
+	// Root middleware
+	tree.AddMiddleware("/", "", func(next HandlerFunc) HandlerFunc {
+		return func(c *Context) error {
+			c.SetHeader("X-Root", "true")
+			return next(c)
+		}
+	})
+
+	// API middleware (non-group)
+	tree.AddMiddleware("/api", "api", func(next HandlerFunc) HandlerFunc {
+		return func(c *Context) error {
+			c.SetHeader("X-API", "true")
+			return next(c)
+		}
+	})
+
+	// Dashboard group middleware
+	tree.AddMiddleware("/dashboard", "(dashboard)", func(next HandlerFunc) HandlerFunc {
+		return func(c *Context) error {
+			c.SetHeader("X-Dashboard", "true")
+			return next(c)
+		}
+	})
+
+	// Dashboard settings middleware (nested in group)
+	tree.AddMiddleware("/dashboard/settings", "(dashboard)/settings", func(next HandlerFunc) HandlerFunc {
+		return func(c *Context) error {
+			c.SetHeader("X-Settings", "true")
+			return next(c)
+		}
+	})
+
+	// Deeply nested route in dashboard group should get root + dashboard + settings
+	chain := tree.GetMiddlewareChain("/dashboard/settings/profile", "(dashboard)/settings/profile")
+	if len(chain) != 3 {
+		t.Errorf("expected 3 middleware for (dashboard)/settings/profile, got %d", len(chain))
+	}
+
+	// API route should get root + api (not dashboard)
+	chain = tree.GetMiddlewareChain("/api/users", "api/users")
+	if len(chain) != 2 {
+		t.Errorf("expected 2 middleware for api/users, got %d", len(chain))
 	}
 }
