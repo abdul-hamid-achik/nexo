@@ -1624,19 +1624,23 @@ type ImportMapping struct {
 // CreateImportSymlinks creates symlinks in .fuego/imports/ for directories that need sanitization.
 // This includes bracket directories ([param], [...param], [[...param]]) and route groups ((name)).
 //
-// NEW IMPLEMENTATION (v0.9.8): To handle nested bracket directories properly, this function now:
-//  1. Creates real directories for all intermediate path segments in .fuego/imports/
-//  2. Creates symlinks ONLY for the leaf directories containing route files
-//  3. For bracket directories that have BOTH direct route files AND nested subdirectories,
-//     creates file-level symlinks to avoid conflicts
+// IMPLEMENTATION (v0.9.10): Creates REAL directories with FILE-level symlinks.
+// For nested bracket directories like app/api/apps/[name]/deployments/[id]/route.go:
 //
-// Example for app/api/apps/[name]/deployments/[id]/route.go:
+//  1. Create real directories for the full sanitized path:
+//     .fuego/imports/app/api/apps/_name/deployments/_id/ (real directory)
 //
-//	.fuego/imports/app/api/apps/_name/            (real directory)
-//	.fuego/imports/app/api/apps/_name/deployments/  (real directory)
-//	.fuego/imports/app/api/apps/_name/deployments/_id -> ../../../../../../app/api/apps/[name]/deployments/[id]  (symlink)
+//  2. Symlink only the FILES inside each directory:
+//     .fuego/imports/app/api/apps/_name/deployments/_id/route.go -> [source]/route.go
 //
-// Returns the list of created symlinks.
+// This approach avoids the problem of creating files inside symlinked directories
+// (which would write to the source tree instead of .fuego/imports/).
+//
+// This allows Go to resolve import paths like:
+//
+//	module/.fuego/imports/app/api/apps/_name/deployments/_id
+//
+// Returns the list of created directory mappings.
 func CreateImportSymlinks(appDir string) ([]ImportMapping, error) {
 	var mappings []ImportMapping
 
@@ -1649,15 +1653,13 @@ func CreateImportSymlinks(appDir string) ([]ImportMapping, error) {
 	// Determine the .fuego/imports directory location (relative to baseDir)
 	importsDir := filepath.Join(baseDir, fuegoImportsDir)
 
-	// First pass: collect all directories that need symlinks
-	type dirInfo struct {
-		relPath        string   // Relative path from baseDir (e.g., "app/api/apps/[name]")
-		sanitizedPath  string   // Sanitized path (e.g., "app/api/apps/_name")
-		hasDirectFiles bool     // Has route.go, page.templ, etc. directly in this directory
-		children       []string // List of child directory relative paths that also need symlinks
+	// Collect all paths that need symlinks and their bracket segments
+	type bracketInfo struct {
+		relPath  string // Full relative path from baseDir (e.g., "app/api/apps/[name]/deployments/[id]")
+		segments []int  // Indices of segments that are bracket directories
 	}
 
-	dirsMap := make(map[string]*dirInfo) // map[relPath]*dirInfo
+	var pathsToProcess []bracketInfo
 	var needsAnySymlinks bool
 
 	err := filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
@@ -1707,33 +1709,19 @@ func CreateImportSymlinks(appDir string) ([]ImportMapping, error) {
 
 		needsAnySymlinks = true
 
-		// Register this directory
-		if _, exists := dirsMap[relDir]; !exists {
-			dirsMap[relDir] = &dirInfo{
-				relPath:        relDir,
-				sanitizedPath:  sanitizePathForImport(relDir),
-				hasDirectFiles: true,
-				children:       []string{},
+		// Find all bracket/group segments in the path
+		segments := strings.Split(relDir, string(filepath.Separator))
+		var bracketIndices []int
+		for i, seg := range segments {
+			if strings.Contains(seg, "[") || (strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")")) {
+				bracketIndices = append(bracketIndices, i)
 			}
-		} else {
-			dirsMap[relDir].hasDirectFiles = true
 		}
 
-		// Register all parent directories in the path
-		segments := strings.Split(relDir, string(filepath.Separator))
-		for i := 1; i < len(segments); i++ {
-			parentPath := strings.Join(segments[:i], string(filepath.Separator))
-			if needsImportSanitization(parentPath) {
-				if _, exists := dirsMap[parentPath]; !exists {
-					dirsMap[parentPath] = &dirInfo{
-						relPath:        parentPath,
-						sanitizedPath:  sanitizePathForImport(parentPath),
-						hasDirectFiles: false,
-						children:       []string{},
-					}
-				}
-			}
-		}
+		pathsToProcess = append(pathsToProcess, bracketInfo{
+			relPath:  relDir,
+			segments: bracketIndices,
+		})
 
 		return nil
 	})
@@ -1746,200 +1734,101 @@ func CreateImportSymlinks(appDir string) ([]ImportMapping, error) {
 		return nil, nil // No symlinks needed
 	}
 
-	// Build parent-child relationships
-	for relPath := range dirsMap {
-		segments := strings.Split(relPath, string(filepath.Separator))
-		if len(segments) > 1 {
-			parentPath := strings.Join(segments[:len(segments)-1], string(filepath.Separator))
-			if parentDir, exists := dirsMap[parentPath]; exists {
-				parentDir.children = append(parentDir.children, relPath)
-			}
-		}
-	}
-
 	// Create .fuego/imports directory
 	if err := os.MkdirAll(importsDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create %s directory: %w", importsDir, err)
 	}
 
-	// Second pass: create directory structure
-	// Strategy:
-	// - If a directory has NO children: create a symlink
-	// - If a directory has children: create a real directory
-	//   - If it also has direct files: create file-level symlinks for those files
+	// NEW APPROACH: Create real directories for everything, symlink only files
+	// This avoids the problem where creating paths inside a symlink goes to the source tree.
+	//
+	// For app/api/apps/[name]/deployments/[id]/route.go:
+	// - Create: .fuego/imports/app/api/apps/_name/deployments/_id/ (real directories)
+	// - Symlink: .fuego/imports/app/api/apps/_name/deployments/_id/route.go -> [source]/route.go
 
-	for _, dirInf := range dirsMap {
-		isLeaf := len(dirInf.children) == 0
-		sanitizedFullPath := filepath.Join(importsDir, dirInf.sanitizedPath)
-		originalFullPath := filepath.Join(baseDir, dirInf.relPath)
+	// Collect unique directories that need to be created (deduplicated)
+	dirsToCreate := make(map[string]string) // sanitizedPath -> originalPath
 
-		if isLeaf {
-			// Leaf directory: create a symlink to the original directory
-			if err := createSymlinkSafely(sanitizedFullPath, originalFullPath, importsDir); err != nil {
-				_ = os.RemoveAll(importsDir)
-				return nil, err
+	for _, pathInfo := range pathsToProcess {
+		sanitizedPath := sanitizePathForImport(pathInfo.relPath)
+		if _, exists := dirsToCreate[sanitizedPath]; !exists {
+			dirsToCreate[sanitizedPath] = pathInfo.relPath
+		}
+	}
+
+	// Create all directories and symlink their files
+	for sanitizedPath, originalRelPath := range dirsToCreate {
+		sanitizedFullPath := filepath.Join(importsDir, sanitizedPath)
+		originalFullPath := filepath.Join(baseDir, originalRelPath)
+
+		// Create the directory (real, not a symlink)
+		if err := os.MkdirAll(sanitizedFullPath, 0755); err != nil {
+			_ = os.RemoveAll(importsDir)
+			return nil, fmt.Errorf("failed to create directory %s: %w", sanitizedFullPath, err)
+		}
+
+		// Read the original directory and symlink relevant files
+		files, err := os.ReadDir(originalFullPath)
+		if err != nil {
+			_ = os.RemoveAll(importsDir)
+			return nil, fmt.Errorf("failed to read directory %s: %w", originalFullPath, err)
+		}
+
+		for _, file := range files {
+			if file.IsDir() {
+				continue
+			}
+			// Only symlink Go source files (not test files, not generated files)
+			name := file.Name()
+			isRelevant := (strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")) ||
+				strings.HasSuffix(name, ".templ")
+			if !isRelevant {
+				continue
 			}
 
-			mappings = append(mappings, ImportMapping{
-				Original:    originalFullPath,
-				Sanitized:   dirInf.sanitizedPath,
-				SymlinkPath: sanitizedFullPath,
-			})
-		} else {
-			// Intermediate directory: create as a real directory
-			if err := os.MkdirAll(sanitizedFullPath, 0755); err != nil {
-				_ = os.RemoveAll(importsDir)
-				return nil, fmt.Errorf("failed to create directory %s: %w", sanitizedFullPath, err)
-			}
+			srcFile := filepath.Join(originalFullPath, name)
+			dstFile := filepath.Join(sanitizedFullPath, name)
 
-			// If this intermediate directory has direct files, create file-level symlinks
-			if dirInf.hasDirectFiles {
-				files, err := os.ReadDir(originalFullPath)
-				if err != nil {
+			// Check if symlink already exists and is correct
+			if existingInfo, err := os.Lstat(dstFile); err == nil {
+				if existingInfo.Mode()&os.ModeSymlink != 0 {
+					target, err := os.Readlink(dstFile)
+					if err == nil {
+						expectedTarget, _ := filepath.Rel(filepath.Dir(dstFile), srcFile)
+						if target == expectedTarget {
+							// Symlink is correct, skip
+							continue
+						}
+					}
+				}
+				// Remove existing file/symlink that doesn't match
+				if err := os.Remove(dstFile); err != nil {
 					_ = os.RemoveAll(importsDir)
-					return nil, fmt.Errorf("failed to read directory %s: %w", originalFullPath, err)
+					return nil, fmt.Errorf("failed to remove existing file %s: %w", dstFile, err)
 				}
+			}
 
-				for _, file := range files {
-					if file.IsDir() {
-						continue
-					}
-					// Only symlink relevant files
-					name := file.Name()
-					isRelevant := name == "route.go" || name == "middleware.go" || name == "proxy.go" ||
-						name == "page.templ" || name == "layout.templ"
-					if !isRelevant {
-						continue
-					}
+			// Calculate relative path from dstFile to srcFile
+			relTarget, err := filepath.Rel(filepath.Dir(dstFile), srcFile)
+			if err != nil {
+				_ = os.RemoveAll(importsDir)
+				return nil, fmt.Errorf("failed to calculate relative path for file symlink: %w", err)
+			}
 
-					srcFile := filepath.Join(originalFullPath, name)
-					dstFile := filepath.Join(sanitizedFullPath, name)
-
-					// Remove existing file/symlink if it exists
-					if existingInfo, err := os.Lstat(dstFile); err == nil {
-						if existingInfo.Mode()&os.ModeSymlink != 0 {
-							// Check if symlink points to the right place
-							target, err := os.Readlink(dstFile)
-							if err == nil {
-								expectedTarget, _ := filepath.Rel(filepath.Dir(dstFile), srcFile)
-								if target == expectedTarget {
-									// Symlink is correct, skip
-									continue
-								}
-							}
-						}
-						// Remove existing file/symlink that doesn't match
-						if err := os.Remove(dstFile); err != nil {
-							_ = os.RemoveAll(importsDir)
-							return nil, fmt.Errorf("failed to remove existing file %s: %w", dstFile, err)
-						}
-					}
-
-					// Calculate relative path from dstFile to srcFile
-					relTarget, err := filepath.Rel(filepath.Dir(dstFile), srcFile)
-					if err != nil {
-						_ = os.RemoveAll(importsDir)
-						return nil, fmt.Errorf("failed to calculate relative path for file symlink: %w", err)
-					}
-
-					if err := os.Symlink(relTarget, dstFile); err != nil {
-						_ = os.RemoveAll(importsDir)
-						return nil, fmt.Errorf("failed to create file symlink %s -> %s: %w", dstFile, relTarget, err)
-					}
-				}
+			if err := os.Symlink(relTarget, dstFile); err != nil {
+				_ = os.RemoveAll(importsDir)
+				return nil, fmt.Errorf("failed to create file symlink %s -> %s: %w", dstFile, relTarget, err)
 			}
 		}
+
+		mappings = append(mappings, ImportMapping{
+			Original:    originalFullPath,
+			Sanitized:   sanitizedPath,
+			SymlinkPath: sanitizedFullPath,
+		})
 	}
 
 	return mappings, nil
-}
-
-// createSymlinkSafely creates a symlink, handling existing symlinks and directories
-func createSymlinkSafely(symlinkPath, targetPath, importsDir string) error {
-	// Check if symlink already exists
-	if existingInfo, err := os.Lstat(symlinkPath); err == nil {
-		// Something exists at this path
-		if existingInfo.Mode()&os.ModeSymlink != 0 {
-			// It's a symlink, check if it points to the right place
-			target, err := os.Readlink(symlinkPath)
-			if err == nil {
-				expectedTarget, _ := filepath.Rel(filepath.Dir(symlinkPath), targetPath)
-				if target == expectedTarget {
-					// Symlink is correct, nothing to do
-					return nil
-				}
-			}
-		}
-		// Remove existing file/symlink/directory that doesn't match
-		if err := os.RemoveAll(symlinkPath); err != nil {
-			return fmt.Errorf("failed to remove existing path %s: %w", symlinkPath, err)
-		}
-	}
-
-	// Create parent directories for the symlink (without following existing symlinks)
-	parentDir := filepath.Dir(symlinkPath)
-	if err := mkdirAllNoFollow(parentDir, importsDir); err != nil {
-		return fmt.Errorf("failed to create parent directory for symlink: %w", err)
-	}
-
-	// Calculate relative path from symlink location to target
-	relTarget, err := filepath.Rel(filepath.Dir(symlinkPath), targetPath)
-	if err != nil {
-		return fmt.Errorf("failed to calculate relative path: %w", err)
-	}
-
-	// Create the symlink
-	if err := os.Symlink(relTarget, symlinkPath); err != nil {
-		return fmt.Errorf("failed to create symlink %s -> %s: %w", symlinkPath, relTarget, err)
-	}
-
-	return nil
-}
-
-// mkdirAllNoFollow creates all directories in the path, but doesn't follow symlinks.
-// This prevents creating directories inside symlinked directories.
-func mkdirAllNoFollow(path, rootDir string) error {
-	// Get path relative to rootDir
-	relPath, err := filepath.Rel(rootDir, path)
-	if err != nil {
-		return err
-	}
-
-	// Build the path segment by segment from rootDir
-	currentPath := rootDir
-	segments := strings.Split(relPath, string(filepath.Separator))
-
-	for _, segment := range segments {
-		if segment == "." || segment == ".." {
-			continue
-		}
-
-		currentPath = filepath.Join(currentPath, segment)
-
-		// Check if this path already exists
-		info, err := os.Lstat(currentPath) // Use Lstat to not follow symlinks
-		if err == nil {
-			// Path exists
-			if info.Mode()&os.ModeSymlink != 0 {
-				// It's a symlink - don't try to create directories inside it
-				// This is the key: we stop here and don't continue into the symlink
-				return nil
-			}
-			// It's a regular directory, continue
-			continue
-		}
-
-		if !os.IsNotExist(err) {
-			return err
-		}
-
-		// Path doesn't exist, create it
-		if err := os.Mkdir(currentPath, 0755); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // CleanupImportSymlinks removes the .fuego directory and all its contents.
