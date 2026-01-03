@@ -55,11 +55,13 @@ type Result struct {
 //   - __param     -> catch-all segment (double underscore)
 //   - ___param    -> optional catch-all segment (triple underscore)
 //   - _group_name -> route group (doesn't affect URL)
+//   - _name_      -> route group (trailing underscore, alternative syntax)
 var (
-	dynamicSegmentRe   = regexp.MustCompile(`^_([a-zA-Z][a-zA-Z0-9]*)$`)
-	catchAllSegmentRe  = regexp.MustCompile(`^__([a-zA-Z][a-zA-Z0-9]*)$`)
-	optionalCatchAllRe = regexp.MustCompile(`^___([a-zA-Z][a-zA-Z0-9]*)$`)
-	routeGroupRe       = regexp.MustCompile(`^_group_([a-zA-Z][a-zA-Z0-9_]*)$`)
+	dynamicSegmentRe          = regexp.MustCompile(`^_([a-zA-Z][a-zA-Z0-9]*)$`)
+	catchAllSegmentRe         = regexp.MustCompile(`^__([a-zA-Z][a-zA-Z0-9]*)$`)
+	optionalCatchAllRe        = regexp.MustCompile(`^___([a-zA-Z][a-zA-Z0-9]*)$`)
+	routeGroupRe              = regexp.MustCompile(`^_group_([a-zA-Z][a-zA-Z0-9_]*)$`)
+	trailingUnderscoreGroupRe = regexp.MustCompile(`^_([a-zA-Z][a-zA-Z0-9]*)_$`)
 )
 
 // knownPrivateFolders contains folder prefixes that are private (not routable)
@@ -337,6 +339,11 @@ func packageNameFromPath(path string) string {
 		return cleanPackageName(matches[1])
 	}
 
+	// Handle route groups with trailing underscore (_name_ -> name)
+	if matches := trailingUnderscoreGroupRe.FindStringSubmatch(lastSeg); len(matches) > 1 {
+		return cleanPackageName(matches[1])
+	}
+
 	// Clean dynamic segments
 	if matches := dynamicSegmentRe.FindStringSubmatch(lastSeg); len(matches) > 1 {
 		return cleanPackageName(matches[1])
@@ -421,6 +428,11 @@ func pathToPattern(path string) string {
 	for _, seg := range segments {
 		// Skip route groups (_group_name)
 		if routeGroupRe.MatchString(seg) {
+			continue
+		}
+
+		// Skip route groups with trailing underscore (_name_)
+		if trailingUnderscoreGroupRe.MatchString(seg) {
 			continue
 		}
 
@@ -1142,8 +1154,13 @@ func pagePathToPattern(dir, appDir string) string {
 	var routeSegments []string
 
 	for _, seg := range segments {
-		// Skip route groups
-		if strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")") {
+		// Skip route groups (_group_name) - they don't affect the URL
+		if routeGroupRe.MatchString(seg) {
+			continue
+		}
+
+		// Skip route groups with trailing underscore (_name_) - they don't affect the URL
+		if trailingUnderscoreGroupRe.MatchString(seg) {
 			continue
 		}
 
@@ -1162,8 +1179,18 @@ func pagePathToPattern(dir, appDir string) string {
 			continue
 		}
 		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
-			routeSegments = append(routeSegments, "{"+matches[1]+"}")
-			continue
+			// Check it's not a known private folder
+			isPrivate := false
+			for _, private := range knownPrivateFolders {
+				if seg == private {
+					isPrivate = true
+					break
+				}
+			}
+			if !isPrivate {
+				routeSegments = append(routeSegments, "{"+matches[1]+"}")
+				continue
+			}
 		}
 
 		routeSegments = append(routeSegments, seg)
@@ -1187,8 +1214,13 @@ func layoutPathToPrefix(dir, appDir string) string {
 	var routeSegments []string
 
 	for _, seg := range segments {
-		// Skip route groups
-		if strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")") {
+		// Skip route groups (_group_name) - they don't affect the URL
+		if routeGroupRe.MatchString(seg) {
+			continue
+		}
+
+		// Skip route groups with trailing underscore (_name_) - they don't affect the URL
+		if trailingUnderscoreGroupRe.MatchString(seg) {
 			continue
 		}
 
@@ -1232,6 +1264,10 @@ func deriveTitle(dir, appDir string) string {
 		seg := segments[i]
 		// Skip route groups (_group_name)
 		if routeGroupRe.MatchString(seg) {
+			continue
+		}
+		// Skip route groups with trailing underscore (_name_)
+		if trailingUnderscoreGroupRe.MatchString(seg) {
 			continue
 		}
 		// Skip dynamic segments (_param), catch-all (__param), optional (___param)
@@ -1422,6 +1458,11 @@ func dirToPattern(dir, appDir string) string {
 	for _, seg := range segments {
 		// Skip route groups (_group_name) - they don't affect the URL
 		if routeGroupRe.MatchString(seg) {
+			continue
+		}
+
+		// Skip route groups with trailing underscore (_name_) - they don't affect the URL
+		if trailingUnderscoreGroupRe.MatchString(seg) {
 			continue
 		}
 

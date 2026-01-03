@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2025-01-03
+
+### Fixed
+
+- **Route Group Handling for Trailing Underscore Pattern**
+  - Fixed route groups with trailing underscore pattern (`_name_`) not being stripped from URLs
+  - Added support for `_auth_`, `_dashboard_`, etc. route groups in both pages and API routes
+  - `app/_auth_/login/page.templ` now correctly maps to `/login` instead of `/_auth_/login`
+  - `app/_dashboard_/route.go` now correctly maps to `/` instead of `/_dashboard_`
+  - Updated all route pattern generation functions: `pagePathToPattern`, `layoutPathToPrefix`, `dirToPattern`, `pathToPattern`, `packageNameFromPath`, `deriveTitle`
+  - Added comprehensive tests for trailing underscore route group pattern
+
 ## [0.9.11] - 2025-01-03
 
 ### Changed

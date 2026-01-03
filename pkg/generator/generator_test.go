@@ -318,6 +318,8 @@ func TestPackageNameFromPath(t *testing.T) {
 		{"__slug", "slug"},
 		{"___categories", "categories"},
 		{"_group_dashboard", "dashboard"},
+		{"_auth_", "auth"},
+		{"_dashboard_", "dashboard"},
 		{"user-profile", "userprofile"},
 		{"123items", "pkg123items"},
 	}
@@ -342,6 +344,9 @@ func TestPathToPattern(t *testing.T) {
 		{"docs/__slug", "docs/*"},
 		{"shop/___cat", "shop/*"},
 		{"_group_admin/settings", "settings"},
+		{"_auth_/login", "login"},
+		{"_dashboard_/apps", "apps"},
+		{"_dashboard_/apps/_name", "apps/{name}"},
 		{"api/v1/users/_id/posts", "api/v1/users/{id}/posts"},
 	}
 
@@ -622,6 +627,11 @@ func TestDirToPattern(t *testing.T) {
 		{"app/api/users/_id", "app", "/api/users/{id}"},
 		{"app/api/docs/__slug", "app", "/api/docs/*"},
 		{"app/api/_group_admin/settings", "app", "/api/settings"},
+		{"app/_auth_/login", "app", "/login"},
+		{"app/_auth_/callback", "app", "/callback"},
+		{"app/_dashboard_", "app", "/"},
+		{"app/_dashboard_/apps", "app", "/apps"},
+		{"app/_dashboard_/apps/_name", "app", "/apps/{name}"},
 		{"app", "app", "/"},
 	}
 
@@ -630,6 +640,34 @@ func TestDirToPattern(t *testing.T) {
 			got := dirToPattern(tt.dir, tt.appDir)
 			if got != tt.want {
 				t.Errorf("dirToPattern(%q, %q) = %q, want %q", tt.dir, tt.appDir, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPagePathToPattern(t *testing.T) {
+	tests := []struct {
+		dir    string
+		appDir string
+		want   string
+	}{
+		{"app", "app", "/"},
+		{"app/about", "app", "/about"},
+		{"app/users/_id", "app", "/users/{id}"},
+		{"app/docs/__slug", "app", "/docs/*"},
+		{"app/_group_marketing/about", "app", "/about"},
+		{"app/_auth_/login", "app", "/login"},
+		{"app/_auth_/callback", "app", "/callback"},
+		{"app/_dashboard_", "app", "/"},
+		{"app/_dashboard_/apps", "app", "/apps"},
+		{"app/_dashboard_/apps/_name", "app", "/apps/{name}"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.dir, func(t *testing.T) {
+			got := pagePathToPattern(tt.dir, tt.appDir)
+			if got != tt.want {
+				t.Errorf("pagePathToPattern(%q, %q) = %q, want %q", tt.dir, tt.appDir, got, tt.want)
 			}
 		})
 	}
