@@ -1815,6 +1815,26 @@ func CreateImportSymlinks(appDir string) ([]ImportMapping, error) {
 					srcFile := filepath.Join(originalFullPath, name)
 					dstFile := filepath.Join(sanitizedFullPath, name)
 
+					// Remove existing file/symlink if it exists
+					if existingInfo, err := os.Lstat(dstFile); err == nil {
+						if existingInfo.Mode()&os.ModeSymlink != 0 {
+							// Check if symlink points to the right place
+							target, err := os.Readlink(dstFile)
+							if err == nil {
+								expectedTarget, _ := filepath.Rel(filepath.Dir(dstFile), srcFile)
+								if target == expectedTarget {
+									// Symlink is correct, skip
+									continue
+								}
+							}
+						}
+						// Remove existing file/symlink that doesn't match
+						if err := os.Remove(dstFile); err != nil {
+							_ = os.RemoveAll(importsDir)
+							return nil, fmt.Errorf("failed to remove existing file %s: %w", dstFile, err)
+						}
+					}
+
 					// Calculate relative path from dstFile to srcFile
 					relTarget, err := filepath.Rel(filepath.Dir(dstFile), srcFile)
 					if err != nil {
