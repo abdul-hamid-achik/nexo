@@ -5,6 +5,173 @@ description: 'Deploy Fuego apps to any platform with a single binary.'
 
 Fuego apps compile to a single binary, making deployment straightforward across any platform.
 
+## Fuego Cloud
+
+The easiest way to deploy Fuego apps is with **Fuego Cloud** - our managed platform at [cloud.fuego.build](https://cloud.fuego.build).
+
+### Quick Start
+
+```bash
+# Login to Fuego Cloud
+fuego login
+
+# Deploy your app
+fuego deploy
+```
+
+That's it! Fuego Cloud handles building, containerization, and deployment automatically.
+
+### Authentication
+
+```bash
+# Browser OAuth (default)
+fuego login
+
+# Use API token directly
+fuego login --token fgc_xxxxxxxxxxxx
+
+# Device flow for headless environments
+fuego login --device
+
+# Log out
+fuego logout
+```
+
+### Application Management
+
+```bash
+# List all your apps
+fuego apps
+
+# Create a new app
+fuego apps create my-api
+fuego apps create my-api --region gdl --size starter
+
+# Delete an app
+fuego apps delete my-api
+fuego apps delete my-api --force  # Skip confirmation
+```
+
+### Deployment
+
+```bash
+# Build and deploy (default)
+fuego deploy
+
+# Deploy without rebuilding
+fuego deploy --no-build
+
+# Set environment variables during deploy
+fuego deploy --env DATABASE_URL=postgres://...
+
+# Deploy to specific app
+fuego deploy --app my-api
+
+# Rollback to previous deployment
+fuego rollback my-api
+
+# Rollback to specific deployment
+fuego rollback my-api abc123
+```
+
+The deploy command:
+1. Reads `fuego.yaml` for app configuration
+2. Builds the Go binary
+3. Creates a Docker image
+4. Pushes to container registry
+5. Triggers deployment on Fuego Cloud
+6. Streams deployment logs
+
+### Logs & Monitoring
+
+```bash
+# View recent logs
+fuego logs my-api
+
+# Stream logs in real-time
+fuego logs my-api -f
+
+# Last 100 lines
+fuego logs my-api --tail 100
+
+# Logs from the last hour
+fuego logs my-api --since 1h
+
+# Filter by level
+fuego logs my-api --level error
+
+# View app status, deployments, and metrics
+fuego status my-api
+```
+
+### Environment Variables
+
+```bash
+# List variables (values redacted)
+fuego env my-api
+
+# Show actual values
+fuego env my-api --show
+
+# Set variables
+fuego env my-api set DATABASE_URL=postgres://...
+fuego env my-api set API_KEY=secret DEBUG=true
+
+# Remove variables
+fuego env my-api unset DEBUG
+```
+
+### Custom Domains
+
+```bash
+# List domains
+fuego domains my-api
+
+# Add a domain
+fuego domains my-api add api.example.com
+
+# Verify DNS configuration
+fuego domains my-api verify api.example.com
+
+# Remove a domain
+fuego domains my-api remove api.example.com
+```
+
+After adding a domain, configure DNS:
+```
+Type:  CNAME
+Name:  api.example.com
+Value: my-api.fuego.build
+```
+
+### Configuration
+
+Add a `cloud` section to your `fuego.yaml`:
+
+```yaml
+name: my-api
+port: 3000
+
+cloud:
+  region: gdl           # Deployment region
+  size: starter         # Instance size (starter, pro, enterprise)
+  domains:              # Custom domains
+    - api.example.com
+  env_file: .env.production  # Env file for deploy
+```
+
+### JSON Output
+
+All commands support `--json` for automation:
+
+```bash
+fuego apps --json
+fuego status my-api --json
+fuego logs my-api --json
+```
+
+---
+
 ## Building for Production
 
 ```bash

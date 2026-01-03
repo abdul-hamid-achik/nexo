@@ -205,7 +205,67 @@ fuego generate page dashboard
 fuego generate page admin/settings --with-layout
 ```
 
-### 8. Upgrade Fuego CLI
+### 8. Deploy to Fuego Cloud
+
+Deploy your app to [cloud.fuego.build](https://cloud.fuego.build):
+
+```bash
+# Login (opens browser for OAuth)
+fuego login
+
+# Deploy current directory
+fuego deploy
+
+# View logs
+fuego logs my-app -f
+
+# Check status
+fuego status my-app
+```
+
+**Full Cloud CLI:**
+```bash
+# Authentication
+fuego login              # Browser OAuth
+fuego login --token XXX  # API token
+fuego login --device     # Device flow (headless)
+fuego logout
+
+# App Management
+fuego apps                            # List apps
+fuego apps create my-app              # Create app
+fuego apps create my-app --region gdl --size starter
+fuego apps delete my-app              # Delete (with confirmation)
+fuego apps delete my-app --force
+
+# Deployment
+fuego deploy                    # Build and deploy
+fuego deploy --no-build         # Skip build
+fuego deploy --env KEY=value    # Set env vars
+fuego rollback my-app           # Rollback to previous
+fuego rollback my-app abc123    # Rollback to specific
+
+# Logs & Status
+fuego logs my-app               # View recent logs
+fuego logs my-app -f            # Stream logs
+fuego logs my-app --tail 100    # Last 100 lines
+fuego logs my-app --since 1h    # Last hour
+fuego status my-app             # App status & metrics
+
+# Environment Variables
+fuego env my-app                # List (redacted)
+fuego env my-app --show         # Show values
+fuego env my-app set KEY=value  # Set variable
+fuego env my-app unset KEY      # Remove variable
+
+# Custom Domains
+fuego domains my-app                    # List domains
+fuego domains my-app add example.com    # Add domain
+fuego domains my-app verify example.com # Verify DNS
+fuego domains my-app remove example.com # Remove domain
+```
+
+### 9. Upgrade Fuego CLI
 
 Check for and install the latest version:
 

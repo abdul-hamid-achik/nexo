@@ -69,9 +69,22 @@
     "Always call defer sse.Close() and check sse.IsClosed() before sending in loops",
     "Use c.Cookie(name) to read cookie values from requests",
     "Use c.SetCookie(cookie) to set HTTP cookies on responses",
-    "Use c.GetBool(key) to retrieve boolean values from context storage"
+    "Use c.GetBool(key) to retrieve boolean values from context storage",
+    "Deploy to Fuego Cloud with 'fuego login' then 'fuego deploy'",
+    "Fuego Cloud credentials are stored in ~/.fuego/credentials.json",
+    "Use 'fuego apps' to list, create, and delete cloud applications",
+    "Use 'fuego logs <app> -f' to stream logs in real-time",
+    "Use 'fuego status <app>' to view app status, deployments, and metrics",
+    "Use 'fuego env <app> set KEY=value' to configure environment variables",
+    "Use 'fuego domains <app> add <domain>' to add custom domains",
+    "Use 'fuego rollback <app>' to rollback to previous deployment",
+    "Configure cloud settings in fuego.yaml under the 'cloud' section (region, size, domains)",
+    "All cloud commands support --json flag for machine-readable output"
   ],
   "previousVersions": [
+    {
+      "tag": "v0.10.0"
+    },
     {
       "tag": "v0.9.10"
     },
