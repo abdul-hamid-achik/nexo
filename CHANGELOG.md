@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.9] - 2025-01-03
+
+### Fixed
+
+- **File Symlink Recreation for Intermediate Directories**
+  - Fixed "file exists" error when running `fuego build` multiple times
+  - Properly handles existing file symlinks in intermediate bracket directories
+  - When an intermediate directory (e.g., `[domain]` with both `route.go` and nested `verify/`) already has file symlinks, they're now checked and skipped if correct, or removed and recreated if pointing to wrong location
+  - Ensures idempotent symlink creation - running `fuego build` multiple times now works correctly
+
 ## [0.9.8] - 2025-01-02
 
 ### Fixed
