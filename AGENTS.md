@@ -127,18 +127,18 @@ func Post(c *fuego.Context) error {
 
 **Using CLI:**
 ```bash
-fuego generate route users/[id] --methods GET,PUT,DELETE
+fuego generate route users/_id --methods GET,PUT,DELETE
 ```
 
-**Result:** Creates `app/api/users/[id]/route.go` mapping to `/api/users/:id`
+**Result:** Creates `app/api/users/_id/route.go` mapping to `/api/users/:id`
 
 ### 3. Add Catch-All Route
 
 ```bash
-fuego generate route docs/[...slug] --methods GET
+fuego generate route docs/__slug --methods GET
 ```
 
-**Result:** Creates `app/api/docs/[...slug]/route.go` mapping to `/api/docs/*`
+**Result:** Creates `app/api/docs/__slug/route.go` mapping to `/api/docs/*`
 
 ### 4. Add Authentication Middleware
 
@@ -376,18 +376,25 @@ func Get(c *fuego.Context) error {
 
 ## Route Patterns Reference
 
-| Pattern | Example | Matches |
-|---------|---------|---------|
-| Static | `users/route.go` | `/api/users` |
-| Dynamic `[param]` | `users/[id]/route.go` | `/api/users/123` |
-| Catch-all `[...param]` | `docs/[...slug]/route.go` | `/api/docs/a/b/c` |
-| Optional `[[...param]]` | `shop/[[...cat]]/route.go` | `/api/shop` and `/api/shop/a/b` |
-| Group `(name)` | `(admin)/settings/route.go` | `/api/settings` |
-| Private folder | `_components/button.go` | Not routable |
+Fuego uses an underscore-based convention for dynamic routes that are valid Go package names:
+
+| Pattern | Directory | URL Pattern | Matches |
+|---------|-----------|-------------|---------|
+| Static | `users/route.go` | `/api/users` | Exact match |
+| Dynamic | `users/_id/route.go` | `/api/users/{id}` | `/api/users/123` |
+| Catch-all | `docs/__slug/route.go` | `/api/docs/*` | `/api/docs/a/b/c` |
+| Optional catch-all | `shop/___cat/route.go` | `/api/shop/*` | `/api/shop` and `/api/shop/a/b` |
+| Route group | `_group_admin/settings/route.go` | `/settings` | Groups routes without URL segment |
+
+**Naming Convention:**
+- `_name` - Dynamic segment (single underscore prefix)
+- `__name` - Catch-all segment (double underscore prefix)
+- `___name` - Optional catch-all segment (triple underscore prefix)
+- `_group_name` - Route group (doesn't affect URL)
 
 ## Private Folders (Not Routable)
 
-Following Next.js conventions, certain folders prefixed with `_` are private and not routable:
+The following underscore-prefixed folders are private and NOT routable:
 
 - `_components/` - UI components
 - `_lib/` - Utility libraries
@@ -396,21 +403,23 @@ Following Next.js conventions, certain folders prefixed with `_` are private and
 - `_private/` - Private implementation details
 - `_shared/` - Shared code
 
+**Important:** Single underscore directories like `_id` are dynamic route parameters, NOT private folders. Only the specific folder names listed above are treated as private.
+
 **Example:**
 ```
 app/
 ├── api/
 │   ├── users/
-│   │   ├── [id]/
-│   │   │   └── route.go      # /api/users/:id (routable)
+│   │   ├── _id/
+│   │   │   └── route.go      # /api/users/{id} (routable - dynamic)
 │   │   └── route.go          # /api/users (routable)
 │   └── _utils/
-│       └── auth.go           # NOT routable (private)
+│       └── auth.go           # NOT routable (private folder)
 └── _components/
-    └── Button.templ          # NOT routable (private)
+    └── Button.templ          # NOT routable (private folder)
 ```
 
-**Note:** Fuego creates file-level symlinks in `.fuego/imports/` for files within directories containing `[brackets]` or `(parentheses)` to enable valid Go imports. For nested bracket directories (e.g., `[name]/deployments/[id]`), real intermediate directories are created with individual file symlinks at each level. The `.fuego/` directory is auto-generated and should be in `.gitignore`.
+**Note:** The underscore convention ensures all directories are valid Go package names, eliminating the need for symlinks or special import handling.
 
 ## Middleware Templates
 
@@ -580,8 +589,8 @@ app/
 │   ├── page.templ       # /dashboard
 │   └── layout.templ     # Dashboard-specific layout
 └── users/
-    └── [id]/
-        └── page.templ   # /users/:id (dynamic)
+    └── _id/
+        └── page.templ   # /users/{id} (dynamic)
 ```
 
 **page.templ example (static page):**
@@ -598,7 +607,7 @@ templ Page() {
 
 **page.templ example (dynamic page with URL parameters):**
 ```go
-// app/posts/[slug]/page.templ
+// app/posts/_slug/page.templ
 package slug
 
 templ Page(slug string) {
@@ -612,8 +621,8 @@ templ Page(slug string) {
 ```
 
 **Dynamic Page Parameter Matching:**
-- Parameter names in `Page()` should match bracket directory names
-- Example: `app/posts/[slug]/page.templ` → `templ Page(slug string)`
+- Parameter names in `Page()` should match the dynamic directory names (without underscore prefix)
+- Example: `app/posts/_slug/page.templ` → `templ Page(slug string)`
 - Mismatched names generate warnings but the page still renders
 
 ### Layout Files
@@ -754,7 +763,7 @@ app.ServeOpenAPI(fuego.OpenAPIOptions{
 
 - **Comments** above handlers become summaries and descriptions
 - **File structure** determines tags  
-- **Path parameters** extracted automatically from `[param]` segments
+- **Path parameters** extracted automatically from `_param` directories
 
 ```go
 // Get retrieves a user by ID

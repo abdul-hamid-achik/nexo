@@ -75,12 +75,12 @@ func TestOpenAPIGenerator_DynamicParameters(t *testing.T) {
 	// Create temp app directory
 	tmpDir := t.TempDir()
 	appDir := filepath.Join(tmpDir, "app")
-	if err := os.MkdirAll(filepath.Join(appDir, "api", "users", "[id]"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(appDir, "api", "users", "_id"), 0755); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create route file
-	routeFile := filepath.Join(appDir, "api", "users", "[id]", "route.go")
+	routeFile := filepath.Join(appDir, "api", "users", "_id", "route.go")
 	routeContent := `package users
 
 import "github.com/abdul-hamid-achik/fuego/pkg/fuego"

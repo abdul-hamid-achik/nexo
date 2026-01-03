@@ -34,49 +34,49 @@ func TestScanner_PathToRoute(t *testing.T) {
 		{
 			name:     "dynamic segment",
 			appDir:   "app",
-			filePath: "app/users/[id]/route.go",
+			filePath: "app/users/_id/route.go",
 			want:     "/users/{id}",
 		},
 		{
 			name:     "multiple dynamic segments",
 			appDir:   "app",
-			filePath: "app/orgs/[orgId]/teams/[teamId]/route.go",
+			filePath: "app/orgs/_orgId/teams/_teamId/route.go",
 			want:     "/orgs/{orgId}/teams/{teamId}",
 		},
 		{
 			name:     "catch-all segment",
 			appDir:   "app",
-			filePath: "app/docs/[...slug]/route.go",
+			filePath: "app/docs/__slug/route.go",
 			want:     "/docs/*",
 		},
 		{
 			name:     "optional catch-all",
 			appDir:   "app",
-			filePath: "app/shop/[[...categories]]/route.go",
+			filePath: "app/shop/___categories/route.go",
 			want:     "/shop/*",
 		},
 		{
 			name:     "route group",
 			appDir:   "app",
-			filePath: "app/(auth)/login/route.go",
+			filePath: "app/_group_auth/login/route.go",
 			want:     "/login",
 		},
 		{
 			name:     "multiple route groups",
 			appDir:   "app",
-			filePath: "app/(marketing)/(landing)/about/route.go",
+			filePath: "app/_group_marketing/_group_landing/about/route.go",
 			want:     "/about",
 		},
 		{
 			name:     "route group with dynamic segment",
 			appDir:   "app",
-			filePath: "app/(api)/users/[id]/route.go",
+			filePath: "app/_group_api/users/_id/route.go",
 			want:     "/users/{id}",
 		},
 		{
 			name:     "complex nested path",
 			appDir:   "app",
-			filePath: "app/(admin)/dashboard/users/[userId]/posts/[postId]/route.go",
+			filePath: "app/_group_admin/dashboard/users/_userId/posts/_postId/route.go",
 			want:     "/dashboard/users/{userId}/posts/{postId}",
 		},
 		{
@@ -164,13 +164,13 @@ func Post(c *fuego.Context) error {
 func TestScanner_Scan_DynamicRoute(t *testing.T) {
 	tmpDir := t.TempDir()
 	appDir := filepath.Join(tmpDir, "app")
-	usersDir := filepath.Join(appDir, "users", "[id]")
+	usersDir := filepath.Join(appDir, "users", "_id")
 
 	if err := os.MkdirAll(usersDir, 0755); err != nil {
 		t.Fatalf("Failed to create dir: %v", err)
 	}
 
-	routeContent := `package users
+	routeContent := `package id
 
 import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
 
@@ -259,7 +259,7 @@ func Get(c *fuego.Context) error {
 func TestScanner_Scan_RouteGroup(t *testing.T) {
 	tmpDir := t.TempDir()
 	appDir := filepath.Join(tmpDir, "app")
-	authDir := filepath.Join(appDir, "(auth)", "login")
+	authDir := filepath.Join(appDir, "_group_auth", "login")
 
 	if err := os.MkdirAll(authDir, 0755); err != nil {
 		t.Fatalf("Failed to create dir: %v", err)
@@ -1026,22 +1026,22 @@ func TestScanner_PathToPageRoute(t *testing.T) {
 		},
 		{
 			name:     "dynamic segment",
-			filePath: "app/users/[id]/page.templ",
+			filePath: "app/users/_id/page.templ",
 			want:     "/users/{id}",
 		},
 		{
 			name:     "catch-all",
-			filePath: "app/docs/[...slug]/page.templ",
+			filePath: "app/docs/__slug/page.templ",
 			want:     "/docs/*",
 		},
 		{
 			name:     "optional catch-all",
-			filePath: "app/shop/[[...categories]]/page.templ",
+			filePath: "app/shop/___categories/page.templ",
 			want:     "/shop/*",
 		},
 		{
 			name:     "route group",
-			filePath: "app/(marketing)/about/page.templ",
+			filePath: "app/_group_marketing/about/page.templ",
 			want:     "/about",
 		},
 		{
@@ -1080,7 +1080,7 @@ func TestScanner_PathToLayoutPrefix(t *testing.T) {
 		},
 		{
 			name:     "route group layout",
-			filePath: "app/(admin)/layout.templ",
+			filePath: "app/_group_admin/layout.templ",
 			want:     "/",
 		},
 		{
@@ -1443,7 +1443,7 @@ func TestScanner_ScanPageInfo_DynamicSegment(t *testing.T) {
 	tmpDir := t.TempDir()
 	appDir := filepath.Join(tmpDir, "app")
 	postsDir := filepath.Join(appDir, "posts")
-	slugDir := filepath.Join(postsDir, "[slug]")
+	slugDir := filepath.Join(postsDir, "_slug")
 
 	if err := os.MkdirAll(slugDir, 0755); err != nil {
 		t.Fatalf("failed to create dir: %v", err)
@@ -1479,7 +1479,7 @@ templ Page(slug string) {
 func TestScanner_ScanPageInfo_NestedDynamicSegment(t *testing.T) {
 	tmpDir := t.TempDir()
 	appDir := filepath.Join(tmpDir, "app")
-	tagsDir := filepath.Join(appDir, "posts", "tags", "[tag]")
+	tagsDir := filepath.Join(appDir, "posts", "tags", "_tag")
 
 	if err := os.MkdirAll(tagsDir, 0755); err != nil {
 		t.Fatalf("failed to create dir: %v", err)
@@ -1515,7 +1515,7 @@ templ Page(tag string) {
 func TestScanner_ScanPageInfo_CatchAll(t *testing.T) {
 	tmpDir := t.TempDir()
 	appDir := filepath.Join(tmpDir, "app")
-	docsDir := filepath.Join(appDir, "docs", "[...slug]")
+	docsDir := filepath.Join(appDir, "docs", "__slug")
 
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
 		t.Fatalf("failed to create dir: %v", err)
@@ -1552,11 +1552,11 @@ func TestScanner_ScanPageInfo_MultipleDynamicPages(t *testing.T) {
 	tmpDir := t.TempDir()
 	appDir := filepath.Join(tmpDir, "app")
 
-	// Create multiple pages with dynamic segments
+	// Create multiple pages with dynamic segments using underscore convention
 	dirs := []string{
-		filepath.Join(appDir, "posts", "[slug]"),
-		filepath.Join(appDir, "posts", "tags", "[tag]"),
-		filepath.Join(appDir, "users", "[id]"),
+		filepath.Join(appDir, "posts", "_slug"),
+		filepath.Join(appDir, "posts", "tags", "_tag"),
+		filepath.Join(appDir, "users", "_id"),
 	}
 
 	pageContent := `package placeholder

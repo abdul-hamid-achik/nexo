@@ -32,30 +32,30 @@ func TestGenerateRoute(t *testing.T) {
 		},
 		{
 			name:        "dynamic route",
-			path:        "users/[id]",
+			path:        "users/_id",
 			methods:     []string{"GET", "PUT", "DELETE"},
-			wantFile:    "api/users/[id]/route.go",
+			wantFile:    "api/users/_id/route.go",
 			wantPattern: "/api/users/{id}",
 		},
 		{
 			name:        "catch-all route",
-			path:        "docs/[...slug]",
+			path:        "docs/__slug",
 			methods:     []string{"GET"},
-			wantFile:    "api/docs/[...slug]/route.go",
+			wantFile:    "api/docs/__slug/route.go",
 			wantPattern: "/api/docs/*",
 		},
 		{
 			name:        "optional catch-all",
-			path:        "shop/[[...categories]]",
+			path:        "shop/___categories",
 			methods:     []string{"GET"},
-			wantFile:    "api/shop/[[...categories]]/route.go",
+			wantFile:    "api/shop/___categories/route.go",
 			wantPattern: "/api/shop/*",
 		},
 		{
 			name:        "nested route",
-			path:        "v1/users/[id]/posts",
+			path:        "v1/users/_id/posts",
 			methods:     []string{"GET"},
-			wantFile:    "api/v1/users/[id]/posts/route.go",
+			wantFile:    "api/v1/users/_id/posts/route.go",
 			wantPattern: "/api/v1/users/{id}/posts",
 		},
 	}
@@ -314,9 +314,10 @@ func TestPackageNameFromPath(t *testing.T) {
 	}{
 		{"", "app"},
 		{"users", "users"},
-		{"[id]", "id"},
-		{"[...slug]", "slug"},
-		{"[[...categories]]", "categories"},
+		{"_id", "id"},
+		{"__slug", "slug"},
+		{"___categories", "categories"},
+		{"_group_dashboard", "dashboard"},
 		{"user-profile", "userprofile"},
 		{"123items", "pkg123items"},
 	}
@@ -337,11 +338,11 @@ func TestPathToPattern(t *testing.T) {
 		want string
 	}{
 		{"users", "users"},
-		{"users/[id]", "users/{id}"},
-		{"docs/[...slug]", "docs/*"},
-		{"shop/[[...cat]]", "shop/*"},
-		{"(admin)/settings", "settings"},
-		{"api/v1/users/[id]/posts", "api/v1/users/{id}/posts"},
+		{"users/_id", "users/{id}"},
+		{"docs/__slug", "docs/*"},
+		{"shop/___cat", "shop/*"},
+		{"_group_admin/settings", "settings"},
+		{"api/v1/users/_id/posts", "api/v1/users/{id}/posts"},
 	}
 
 	for _, tt := range tests {
@@ -367,28 +368,28 @@ func TestExtractParams(t *testing.T) {
 			wantCount: 0,
 		},
 		{
-			path:      "users/[id]",
+			path:      "users/_id",
 			wantCount: 1,
 			wantNames: []string{"id"},
 			catchAlls: []bool{false},
 			optionals: []bool{false},
 		},
 		{
-			path:      "docs/[...slug]",
+			path:      "docs/__slug",
 			wantCount: 1,
 			wantNames: []string{"slug"},
 			catchAlls: []bool{true},
 			optionals: []bool{false},
 		},
 		{
-			path:      "shop/[[...categories]]",
+			path:      "shop/___categories",
 			wantCount: 1,
 			wantNames: []string{"categories"},
 			catchAlls: []bool{true},
 			optionals: []bool{true},
 		},
 		{
-			path:      "users/[userId]/posts/[postId]",
+			path:      "users/_userId/posts/_postId",
 			wantCount: 2,
 			wantNames: []string{"userId", "postId"},
 			catchAlls: []bool{false, false},
@@ -618,9 +619,9 @@ func TestDirToPattern(t *testing.T) {
 		want   string
 	}{
 		{"app/api/users", "app", "/api/users"},
-		{"app/api/users/[id]", "app", "/api/users/{id}"},
-		{"app/api/docs/[...slug]", "app", "/api/docs/*"},
-		{"app/api/(admin)/settings", "app", "/api/settings"},
+		{"app/api/users/_id", "app", "/api/users/{id}"},
+		{"app/api/docs/__slug", "app", "/api/docs/*"},
+		{"app/api/_group_admin/settings", "app", "/api/settings"},
 		{"app", "app", "/"},
 	}
 
@@ -727,35 +728,35 @@ func TestExtractURLParams(t *testing.T) {
 		},
 		{
 			name:      "single param",
-			dir:       "app/posts/[slug]",
+			dir:       "app/posts/_slug",
 			appDir:    "app",
 			wantCount: 1,
 			wantNames: []string{"slug"},
 		},
 		{
 			name:      "nested params",
-			dir:       "app/users/[userId]/posts/[postId]",
+			dir:       "app/users/_userId/posts/_postId",
 			appDir:    "app",
 			wantCount: 2,
 			wantNames: []string{"userId", "postId"},
 		},
 		{
 			name:      "catch-all param",
-			dir:       "app/docs/[...slug]",
+			dir:       "app/docs/__slug",
 			appDir:    "app",
 			wantCount: 1,
 			wantNames: []string{"slug"},
 		},
 		{
 			name:      "optional catch-all param",
-			dir:       "app/shop/[[...categories]]",
+			dir:       "app/shop/___categories",
 			appDir:    "app",
 			wantCount: 1,
 			wantNames: []string{"categories"},
 		},
 		{
 			name:      "with route group",
-			dir:       "app/(admin)/users/[id]",
+			dir:       "app/_group_admin/users/_id",
 			appDir:    "app",
 			wantCount: 1,
 			wantNames: []string{"id"},
@@ -779,117 +780,6 @@ func TestExtractURLParams(t *testing.T) {
 	}
 }
 
-func TestSanitizePathForImport(t *testing.T) {
-	tests := []struct {
-		name string
-		path string
-		want string
-	}{
-		{
-			name: "no brackets",
-			path: "app/posts/details",
-			want: "app/posts/details",
-		},
-		{
-			name: "single dynamic segment",
-			path: "app/posts/[slug]",
-			want: "app/posts/_slug",
-		},
-		{
-			name: "nested dynamic segments",
-			path: "app/users/[userId]/posts/[postId]",
-			want: "app/users/_userId/posts/_postId",
-		},
-		{
-			name: "catch-all segment",
-			path: "app/docs/[...slug]",
-			want: "app/docs/_catchall_slug",
-		},
-		{
-			name: "optional catch-all segment",
-			path: "app/shop/[[...categories]]",
-			want: "app/shop/_opt_catchall_categories",
-		},
-		{
-			name: "route group",
-			path: "app/(dashboard)/settings",
-			want: "app/_group_dashboard/settings",
-		},
-		{
-			name: "route group with dynamic segment",
-			path: "app/(admin)/users/[id]",
-			want: "app/_group_admin/users/_id",
-		},
-		{
-			name: "multiple route groups",
-			path: "app/(marketing)/(blog)/posts",
-			want: "app/_group_marketing/_group_blog/posts",
-		},
-		{
-			name: "complex nested path",
-			path: "app/(dashboard)/apps/[name]/domains/[domain]/verify",
-			want: "app/_group_dashboard/apps/_name/domains/_domain/verify",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := sanitizePathForImport(tt.path)
-			if got != tt.want {
-				t.Errorf("sanitizePathForImport(%q) = %q, want %q", tt.path, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestSanitizeDirName(t *testing.T) {
-	tests := []struct {
-		name string
-		want string
-	}{
-		{"[slug]", "_slug"},
-		{"[id]", "_id"},
-		{"[...slug]", "_catchall_slug"},
-		{"[[...categories]]", "_opt_catchall_categories"},
-		{"posts", "posts"},
-		{"(dashboard)", "_group_dashboard"},
-		{"(auth)", "_group_auth"},
-		{"(marketing-site)", "_group_marketing-site"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := sanitizeDirName(tt.name)
-			if got != tt.want {
-				t.Errorf("sanitizeDirName(%q) = %q, want %q", tt.name, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestNeedsImportSanitization(t *testing.T) {
-	tests := []struct {
-		path string
-		want bool
-	}{
-		{"app/posts/details", false},
-		{"app/posts/[slug]", true},
-		{"app/(dashboard)/settings", true},
-		{"app/api/health", false},
-		{"app/(auth)/login", true},
-		{"app/users/[id]/posts", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			got := needsImportSanitization(tt.path)
-			if got != tt.want {
-				t.Errorf("needsImportSanitization(%q) = %v, want %v", tt.path, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestValidatePageParams(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -899,7 +789,7 @@ func TestValidatePageParams(t *testing.T) {
 		{
 			name: "matching params",
 			page: &PageRegistration{
-				FilePath:  "app/posts/[slug]/page.templ",
+				FilePath:  "app/posts/_slug/page.templ",
 				URLParams: []string{"slug"},
 				Params:    []PageParam{{Name: "slug", Type: "string"}},
 			},
@@ -908,7 +798,7 @@ func TestValidatePageParams(t *testing.T) {
 		{
 			name: "url param not in Page()",
 			page: &PageRegistration{
-				FilePath:  "app/posts/[slug]/page.templ",
+				FilePath:  "app/posts/_slug/page.templ",
 				URLParams: []string{"slug"},
 				Params:    []PageParam{},
 			},
@@ -926,7 +816,7 @@ func TestValidatePageParams(t *testing.T) {
 		{
 			name: "multiple mismatches",
 			page: &PageRegistration{
-				FilePath:  "app/posts/[slug]/page.templ",
+				FilePath:  "app/posts/_slug/page.templ",
 				URLParams: []string{"slug"},
 				Params:    []PageParam{{Name: "id", Type: "string"}, {Name: "user", Type: "User"}},
 			},
@@ -935,7 +825,7 @@ func TestValidatePageParams(t *testing.T) {
 		{
 			name: "partial match",
 			page: &PageRegistration{
-				FilePath:  "app/posts/[slug]/page.templ",
+				FilePath:  "app/posts/_slug/page.templ",
 				URLParams: []string{"slug"},
 				Params:    []PageParam{{Name: "slug", Type: "string"}, {Name: "user", Type: "User"}},
 			},
@@ -970,13 +860,11 @@ func TestGenerateRoutesFile_WithDynamicPages(t *testing.T) {
 					Package:        "slug",
 					Pattern:        "/posts/{slug}",
 					Title:          "Post",
-					FilePath:       "app/posts/[slug]/page.templ",
+					FilePath:       "app/posts/_slug/page.templ",
 					Params:         []PageParam{{Name: "slug", Type: "string", FromPath: true}},
 					URLParams:      []string{"slug"},
 					HasParams:      true,
 					ParamSignature: "Page(slug string)",
-					UseSymlink:     true,
-					SymlinkPath:    "app/posts/_slug",
 				},
 			},
 		})
@@ -1030,7 +918,6 @@ func TestGenerateRoutesFile_WithDynamicPages(t *testing.T) {
 					URLParams:      nil,
 					HasParams:      false,
 					ParamSignature: "Page()",
-					UseSymlink:     false,
 				},
 			},
 		})
@@ -1072,7 +959,7 @@ func TestGenerateRoutesFile_WithDynamicPages(t *testing.T) {
 					Package:    "userId",
 					Pattern:    "/orgs/{orgId}/users/{userId}",
 					Title:      "User",
-					FilePath:   "app/orgs/[orgId]/users/[userId]/page.templ",
+					FilePath:   "app/orgs/_orgId/users/_userId/page.templ",
 					Params: []PageParam{
 						{Name: "orgId", Type: "string", FromPath: true},
 						{Name: "userId", Type: "string", FromPath: true},
@@ -1080,7 +967,6 @@ func TestGenerateRoutesFile_WithDynamicPages(t *testing.T) {
 					URLParams:      []string{"orgId", "userId"},
 					HasParams:      true,
 					ParamSignature: "Page(orgId, userId string)",
-					UseSymlink:     true,
 				},
 			},
 		})
@@ -1138,477 +1024,21 @@ func TestZeroValue(t *testing.T) {
 	}
 }
 
-func TestCreateAndCleanupImportSymlinks(t *testing.T) {
-	// Create a temporary project directory structure
-	tmpDir := t.TempDir()
-	appDir := filepath.Join(tmpDir, "app")
-
-	// Create bracket directories
-	slugDir := filepath.Join(appDir, "posts", "[slug]")
-	if err := os.MkdirAll(slugDir, 0755); err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-
-	// Create a page.templ file in the bracket directory
-	pageContent := `package slug
-
-templ Page(slug string) {
-	<h1>Post: { slug }</h1>
-}
-`
-	if err := os.WriteFile(filepath.Join(slugDir, "page.templ"), []byte(pageContent), 0644); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-
-	// Test symlink creation
-	mappings, err := CreateImportSymlinks(appDir)
-	if err != nil {
-		t.Fatalf("CreateImportSymlinks() error = %v", err)
-	}
-
-	if len(mappings) != 1 {
-		t.Errorf("Expected 1 mapping, got %d", len(mappings))
-	}
-
-	if len(mappings) > 0 {
-		// With the new implementation, _slug is a real directory containing symlinked files
-		slugPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "posts", "_slug")
-		if _, err := os.Stat(slugPath); err != nil {
-			t.Errorf("_slug directory not created at %s: %v", slugPath, err)
-		}
-
-		// Check that page.templ exists inside and is a symlink
-		pageFile := filepath.Join(slugPath, "page.templ")
-		pageInfo, err := os.Lstat(pageFile)
-		if err != nil {
-			t.Errorf("page.templ not found at %s: %v", pageFile, err)
-		} else if pageInfo.Mode()&os.ModeSymlink == 0 {
-			t.Error("Expected page.templ to be a symlink")
-		}
-
-		// Verify the symlink target points to the original file
-		if pageInfo != nil && pageInfo.Mode()&os.ModeSymlink != 0 {
-			target, err := os.Readlink(pageFile)
-			if err != nil {
-				t.Errorf("Failed to read symlink: %v", err)
-			} else {
-				// The target should resolve to the original file
-				resolvedPath := filepath.Join(filepath.Dir(pageFile), target)
-				resolvedPath, _ = filepath.EvalSymlinks(resolvedPath)
-				expectedPath, _ := filepath.EvalSymlinks(filepath.Join(slugDir, "page.templ"))
-				if resolvedPath != expectedPath {
-					t.Errorf("page.templ symlink resolves to %q, want %q", resolvedPath, expectedPath)
-				}
-			}
-		}
-	}
-
-	// Test cleanup
-	err = CleanupImportSymlinks(tmpDir)
-	if err != nil {
-		t.Errorf("CleanupImportSymlinks() error = %v", err)
-	}
-
-	// Check .fuego directory is removed
-	fuegoDir := filepath.Join(tmpDir, ".fuego")
-	if _, err := os.Lstat(fuegoDir); !os.IsNotExist(err) {
-		t.Error(".fuego directory was not cleaned up")
-	}
-}
-
-func TestCreateImportSymlinksWithRouteGroups(t *testing.T) {
-	// Create a temporary project directory structure
-	tmpDir := t.TempDir()
-	appDir := filepath.Join(tmpDir, "app")
-
-	// Create route group directories
-	dashboardDir := filepath.Join(appDir, "(dashboard)", "settings")
-	if err := os.MkdirAll(dashboardDir, 0755); err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-
-	// Create a route.go file in the route group directory
-	routeContent := `package settings
-
-import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
-
-func Get(c *fuego.Context) error {
-	return c.JSON(200, map[string]string{"page": "settings"})
-}
-`
-	if err := os.WriteFile(filepath.Join(dashboardDir, "route.go"), []byte(routeContent), 0644); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-
-	// Test symlink creation
-	mappings, err := CreateImportSymlinks(appDir)
-	if err != nil {
-		t.Fatalf("CreateImportSymlinks() error = %v", err)
-	}
-
-	// With the new implementation, we get a symlink for (dashboard)
-	if len(mappings) == 0 {
-		t.Error("Expected at least 1 mapping, got 0")
-	}
-
-	// Check that the import path resolves correctly (via symlink chain)
-	importPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "_group_dashboard", "settings")
-	if _, err := os.Stat(importPath); err != nil {
-		t.Errorf("Expected import path to resolve at %s, got error: %v", importPath, err)
-	}
-
-	// Check that route.go exists inside
-	routeFile := filepath.Join(importPath, "route.go")
-	if _, err := os.Stat(routeFile); err != nil {
-		t.Errorf("Expected route.go at %s, got error: %v", routeFile, err)
-	}
-
-	// Cleanup
-	_ = CleanupImportSymlinks(tmpDir)
-}
-
-func TestCreateImportSymlinksWithNestedSpecialDirs(t *testing.T) {
-	// Create a temporary project directory structure
-	tmpDir := t.TempDir()
-	appDir := filepath.Join(tmpDir, "app")
-
-	// Create nested bracket and route group directories
-	// app/(dashboard)/apps/[name]/domains/[domain]/verify/
-	nestedDir := filepath.Join(appDir, "(dashboard)", "apps", "[name]", "domains", "[domain]", "verify")
-	if err := os.MkdirAll(nestedDir, 0755); err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-
-	// Create a route.go file
-	routeContent := `package verify
-
-import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
-
-func Get(c *fuego.Context) error {
-	return c.JSON(200, map[string]string{"status": "verified"})
-}
-`
-	if err := os.WriteFile(filepath.Join(nestedDir, "route.go"), []byte(routeContent), 0644); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-
-	// Test symlink creation
-	mappings, err := CreateImportSymlinks(appDir)
-	if err != nil {
-		t.Fatalf("CreateImportSymlinks() error = %v", err)
-	}
-
-	// With the new implementation, we get 1 mapping for the directory containing route files
-	// The function creates real directories (not symlinks) and symlinks the files
-	if len(mappings) < 1 {
-		t.Errorf("Expected at least 1 mapping, got %d", len(mappings))
-	}
-
-	// Check that the full import path exists (as real directories with symlinked files)
-	importPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "_group_dashboard", "apps", "_name", "domains", "_domain", "verify")
-	if _, err := os.Stat(importPath); err != nil {
-		t.Errorf("Expected import path to exist at %s, got error: %v", importPath, err)
-	}
-
-	// Check that route.go exists inside the path and is a symlink
-	routeFile := filepath.Join(importPath, "route.go")
-	if _, err := os.Stat(routeFile); err != nil {
-		t.Errorf("Expected route.go at %s, got error: %v", routeFile, err)
-	}
-
-	// Verify route.go is a symlink to the source
-	if routeInfo, err := os.Lstat(routeFile); err == nil {
-		if routeInfo.Mode()&os.ModeSymlink == 0 {
-			t.Error("Expected route.go to be a symlink")
-		}
-	}
-
-	// Cleanup
-	_ = CleanupImportSymlinks(tmpDir)
-}
-
-func TestNestedBracketDirectorySymlinks(t *testing.T) {
-	// Test case for Bug #2: Missing symlinks for nested bracket directories
-	// This test creates the structure: app/api/apps/[name]/deployments/[id]/route.go
-	tmpDir := t.TempDir()
-	appDir := filepath.Join(tmpDir, "app")
-
-	// Create nested bracket directories
-	nestedDir := filepath.Join(appDir, "api", "apps", "[name]", "deployments", "[id]")
-	if err := os.MkdirAll(nestedDir, 0755); err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-
-	// Create a route.go file
-	routeContent := `package id
-
-import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
-
-func Get(c *fuego.Context) error {
-	return c.JSON(200, map[string]string{"id": c.Param("id"), "name": c.Param("name")})
-}
-`
-	if err := os.WriteFile(filepath.Join(nestedDir, "route.go"), []byte(routeContent), 0644); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-
-	// Test symlink creation
-	mappings, err := CreateImportSymlinks(appDir)
-	if err != nil {
-		t.Fatalf("CreateImportSymlinks() error = %v", err)
-	}
-
-	// With the new implementation, we get 1 mapping for the deepest directory containing route files
-	// The implementation creates real directories with symlinks to files (not symlinks to directories)
-	if len(mappings) < 1 {
-		t.Errorf("Expected at least 1 mapping, got %d", len(mappings))
-	}
-
-	// Check that _name directory exists (now a real directory, not a symlink)
-	namePath := filepath.Join(tmpDir, ".fuego", "imports", "app", "api", "apps", "_name")
-	if _, err := os.Stat(namePath); err != nil {
-		t.Errorf("Expected _name directory at %s, but got error: %v", namePath, err)
-	}
-
-	// Check that the import path resolves correctly
-	importPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "api", "apps", "_name", "deployments", "_id")
-	if info, err := os.Stat(importPath); err != nil {
-		t.Errorf("Import path %s should resolve but got error: %v", importPath, err)
-	} else if !info.IsDir() {
-		t.Error("Import path should resolve to a directory")
-	}
-
-	// Check that route.go exists inside the resolved import path (this is a symlink to the real file)
-	routeFile := filepath.Join(importPath, "route.go")
-	if _, err := os.Stat(routeFile); err != nil {
-		t.Errorf("route.go should exist at %s but got error: %v", routeFile, err)
-	}
-
-	// Verify route.go is a symlink to the actual source file
-	if routeInfo, err := os.Lstat(routeFile); err == nil {
-		if routeInfo.Mode()&os.ModeSymlink == 0 {
-			t.Error("route.go should be a symlink to the source file")
-		}
-	}
-
-	// Cleanup
-	_ = CleanupImportSymlinks(tmpDir)
-}
-
-func TestIntermediateBracketWithDirectRoute(t *testing.T) {
-	// Test case for Bug #3: Routes under bracket directories not discovered
-	// This test creates both:
-	// - app/api/apps/[name]/route.go (direct route in bracket dir)
-	// - app/api/apps/[name]/deployments/[id]/route.go (nested route)
-	tmpDir := t.TempDir()
-	appDir := filepath.Join(tmpDir, "app")
-
-	// Create the bracket directory with a direct route
-	nameDir := filepath.Join(appDir, "api", "apps", "[name]")
-	if err := os.MkdirAll(nameDir, 0755); err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-
-	nameRouteContent := `package name
-
-import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
-
-func Get(c *fuego.Context) error {
-	return c.JSON(200, map[string]string{"name": c.Param("name")})
-}
-`
-	if err := os.WriteFile(filepath.Join(nameDir, "route.go"), []byte(nameRouteContent), 0644); err != nil {
-		t.Fatalf("Failed to write name route.go: %v", err)
-	}
-
-	// Create nested directory with route
-	idDir := filepath.Join(nameDir, "deployments", "[id]")
-	if err := os.MkdirAll(idDir, 0755); err != nil {
-		t.Fatalf("Failed to create nested directory: %v", err)
-	}
-
-	idRouteContent := `package id
-
-import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
-
-func Get(c *fuego.Context) error {
-	return c.JSON(200, map[string]string{"id": c.Param("id")})
-}
-`
-	if err := os.WriteFile(filepath.Join(idDir, "route.go"), []byte(idRouteContent), 0644); err != nil {
-		t.Fatalf("Failed to write id route.go: %v", err)
-	}
-
-	// Test symlink creation
-	_, err := CreateImportSymlinks(appDir)
-	if err != nil {
-		t.Fatalf("CreateImportSymlinks() error = %v", err)
-	}
-
-	// With the new implementation, we create real directories and symlink files
-	// Check that _name directory exists (as a real directory)
-	namePath := filepath.Join(tmpDir, ".fuego", "imports", "app", "api", "apps", "_name")
-	if _, err := os.Stat(namePath); err != nil {
-		t.Fatalf("Expected _name directory at %s, got error: %v", namePath, err)
-	}
-
-	// Check that _name/route.go is accessible (symlink to source file)
-	routeFilePath := filepath.Join(namePath, "route.go")
-	if _, err := os.Stat(routeFilePath); err != nil {
-		t.Errorf("Expected route.go to be accessible at %s, got error: %v", routeFilePath, err)
-	}
-
-	// Check that _name/deployments/_id is accessible
-	idPath := filepath.Join(namePath, "deployments", "_id")
-	if _, err := os.Stat(idPath); err != nil {
-		t.Errorf("Expected _id directory to be accessible at %s, got error: %v", idPath, err)
-	}
-
-	// Check that route.go exists inside the _id directory
-	idRouteFile := filepath.Join(idPath, "route.go")
-	if _, err := os.Stat(idRouteFile); err != nil {
-		t.Errorf("Expected route.go at %s, got error: %v", idRouteFile, err)
-	}
-
-	// Cleanup
-	_ = CleanupImportSymlinks(tmpDir)
-}
-
-func TestTripleNestedBrackets(t *testing.T) {
-	// Test case for Bug #4: Incorrect relative path for deeply nested symlinks
-	// This test creates: app/orgs/[org]/users/[user]/posts/[post]/route.go
-	tmpDir := t.TempDir()
-	appDir := filepath.Join(tmpDir, "app")
-
-	// Create triple nested bracket structure
-	postDir := filepath.Join(appDir, "orgs", "[org]", "users", "[user]", "posts", "[post]")
-	if err := os.MkdirAll(postDir, 0755); err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-
-	routeContent := `package post
-
-import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
-
-func Get(c *fuego.Context) error {
-	return c.JSON(200, map[string]any{
-		"org":  c.Param("org"),
-		"user": c.Param("user"),
-		"post": c.Param("post"),
-	})
-}
-`
-	if err := os.WriteFile(filepath.Join(postDir, "route.go"), []byte(routeContent), 0644); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-
-	// Test symlink creation
-	_, err := CreateImportSymlinks(appDir)
-	if err != nil {
-		t.Fatalf("CreateImportSymlinks() error = %v", err)
-	}
-
-	// Check that the import path exists and contains a symlinked route.go
-	postPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "orgs", "_org", "users", "_user", "posts", "_post")
-	if _, err := os.Stat(postPath); err != nil {
-		t.Fatalf("Expected _post directory at %s, got error: %v", postPath, err)
-	}
-
-	// Check that route.go is accessible and is a symlink to the source file
-	routeFile := filepath.Join(postPath, "route.go")
-	if _, err := os.Stat(routeFile); err != nil {
-		t.Fatalf("Expected route.go at %s, got error: %v", routeFile, err)
-	}
-
-	// Verify route.go is a symlink
-	routeInfo, err := os.Lstat(routeFile)
-	if err != nil {
-		t.Fatalf("Failed to lstat route.go: %v", err)
-	}
-	if routeInfo.Mode()&os.ModeSymlink == 0 {
-		t.Error("Expected route.go to be a symlink to the source file")
-	}
-
-	// Verify the symlink resolves to the actual source file
-	target, err := os.Readlink(routeFile)
-	if err != nil {
-		t.Fatalf("Failed to read symlink: %v", err)
-	}
-
-	resolvedPath := filepath.Join(filepath.Dir(routeFile), target)
-	resolvedPath, _ = filepath.EvalSymlinks(resolvedPath)
-	expectedPath, _ := filepath.EvalSymlinks(filepath.Join(postDir, "route.go"))
-
-	if resolvedPath != expectedPath {
-		t.Errorf("route.go symlink resolves to %q, want %q", resolvedPath, expectedPath)
-	}
-
-	// Cleanup
-	_ = CleanupImportSymlinks(tmpDir)
-}
-
-func TestRouteGroupWithNestedBrackets(t *testing.T) {
-	// Test route groups combined with nested brackets
-	// Structure: app/(dashboard)/apps/[name]/settings/route.go
-	tmpDir := t.TempDir()
-	appDir := filepath.Join(tmpDir, "app")
-
-	settingsDir := filepath.Join(appDir, "(dashboard)", "apps", "[name]", "settings")
-	if err := os.MkdirAll(settingsDir, 0755); err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-
-	routeContent := `package settings
-
-import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
-
-func Get(c *fuego.Context) error {
-	return c.JSON(200, map[string]string{"name": c.Param("name")})
-}
-`
-	if err := os.WriteFile(filepath.Join(settingsDir, "route.go"), []byte(routeContent), 0644); err != nil {
-		t.Fatalf("Failed to write test file: %v", err)
-	}
-
-	// Test symlink creation
-	_, err := CreateImportSymlinks(appDir)
-	if err != nil {
-		t.Fatalf("CreateImportSymlinks() error = %v", err)
-	}
-
-	// Check that the import path resolves correctly (via symlink chain)
-	// Note: "settings" is a regular directory, not a bracket directory, so it won't have a symlink
-	// The symlinks are for (dashboard) and [name]
-	importPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "_group_dashboard", "apps", "_name", "settings")
-	if _, err := os.Stat(importPath); err != nil {
-		t.Errorf("Expected import path to resolve at %s, got error: %v", importPath, err)
-	}
-
-	// Check that route.go exists inside
-	routeFile := filepath.Join(importPath, "route.go")
-	if _, err := os.Stat(routeFile); err != nil {
-		t.Errorf("Expected route.go at %s, got error: %v", routeFile, err)
-	}
-
-	// Cleanup
-	_ = CleanupImportSymlinks(tmpDir)
-}
-
-func TestScanAndGenerateRoutesWithDeeplyNestedBrackets(t *testing.T) {
-	// End-to-end test for the exact bug report scenario
+func TestScanAndGenerateRoutesWithDeeplyNestedDynamicDirs(t *testing.T) {
+	// End-to-end test using the new underscore convention
 	tmpDir := t.TempDir()
 	// Resolve symlinks to handle macOS /var -> /private/var
 	tmpDir, _ = filepath.EvalSymlinks(tmpDir)
 	appDir := filepath.Join(tmpDir, "app")
 
-	// Create the exact structure from the bug report
+	// Create the structure using underscore convention
 	dirs := map[string]string{
-		"api/apps/[name]":                         "name",
-		"api/apps/[name]/deployments/[id]":        "id",
-		"api/apps/[name]/domains/[domain]":        "domain",
-		"api/apps/[name]/domains/[domain]/verify": "verify",
-		"api/apps/[name]/env":                     "env",
-		"api/apps/[name]/metrics":                 "metrics",
+		"api/apps/_name":                        "name",
+		"api/apps/_name/deployments/_id":        "id",
+		"api/apps/_name/domains/_domain":        "domain",
+		"api/apps/_name/domains/_domain/verify": "verify",
+		"api/apps/_name/env":                    "env",
+		"api/apps/_name/metrics":                "metrics",
 	}
 
 	routeTemplate := `package %s
@@ -1644,7 +1074,7 @@ func Post(c *fuego.Context) error {
 	return c.JSON(201, nil)
 }
 `
-	verifyDir := filepath.Join(appDir, "api/apps/[name]/domains/[domain]/verify")
+	verifyDir := filepath.Join(appDir, "api/apps/_name/domains/_domain/verify")
 	if err := os.WriteFile(filepath.Join(verifyDir, "route.go"), []byte(verifyContent), 0644); err != nil {
 		t.Fatalf("Failed to write verify route.go: %v", err)
 	}
@@ -1680,12 +1110,12 @@ func Post(c *fuego.Context) error {
 
 	contentStr := string(content)
 
-	// Check that ALL expected routes are present (this was Bug #3)
+	// Check that ALL expected routes are present
 	expectedRoutes := []string{
 		"/api/apps/{name}",
 		"/api/apps/{name}/deployments/{id}",
 		"/api/apps/{name}/domains/{domain}",
-		"/api/apps/{name}/domains/{domain}/verify", // This was MISSING in the bug
+		"/api/apps/{name}/domains/{domain}/verify",
 		"/api/apps/{name}/env",
 		"/api/apps/{name}/metrics",
 	}
@@ -1704,8 +1134,8 @@ func Post(c *fuego.Context) error {
 		t.Error("Expected POST handler for verify route")
 	}
 
-	// Check that NO layout imports are present (Bug #1)
+	// Check that NO layout imports are present
 	if strings.Contains(contentStr, "_layout") {
-		t.Error("Found unused layout import in generated file (Bug #1 not fixed)")
+		t.Error("Found unused layout import in generated file")
 	}
 }

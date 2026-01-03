@@ -34,18 +34,23 @@ func (s *Scanner) SetVerbose(v bool) {
 }
 
 // Regular expressions for matching route segment patterns
+// Using underscore convention for valid Go package names:
+//   - _param      -> dynamic segment (single underscore)
+//   - __param     -> catch-all segment (double underscore)
+//   - ___param    -> optional catch-all segment (triple underscore)
+//   - _group_name -> route group (doesn't affect URL)
 var (
-	// [param] - dynamic segment
-	dynamicSegmentRe = regexp.MustCompile(`^\[([^\.\]]+)\]$`)
+	// _param - dynamic segment (single underscore + valid identifier, but NOT known private folders)
+	dynamicSegmentRe = regexp.MustCompile(`^_([a-zA-Z][a-zA-Z0-9]*)$`)
 
-	// [...param] - catch-all segment
-	catchAllSegmentRe = regexp.MustCompile(`^\[\.\.\.([^\]]+)\]$`)
+	// __param - catch-all segment (double underscore)
+	catchAllSegmentRe = regexp.MustCompile(`^__([a-zA-Z][a-zA-Z0-9]*)$`)
 
-	// [[...param]] - optional catch-all segment
-	optionalCatchAllRe = regexp.MustCompile(`^\[\[\.\.\.([^\]]+)\]\]$`)
+	// ___param - optional catch-all segment (triple underscore)
+	optionalCatchAllRe = regexp.MustCompile(`^___([a-zA-Z][a-zA-Z0-9]*)$`)
 
-	// (group) - route group (doesn't affect URL)
-	routeGroupRe = regexp.MustCompile(`^\([^)]+\)$`)
+	// _group_name - route group (doesn't affect URL)
+	routeGroupRe = regexp.MustCompile(`^_group_([a-zA-Z][a-zA-Z0-9_]*)$`)
 )
 
 // knownPrivateFolders contains folder prefixes that are private (not routable)
@@ -60,30 +65,19 @@ var knownPrivateFolders = []string{
 }
 
 // isPrivateFolder checks if a directory should be skipped during scanning.
-// Returns true for:
-// - Known private folders (_components, _lib, etc.)
-// - Symlinks pointing to bracket directories (our generated symlinks)
-func isPrivateFolder(name, path string) bool {
-	// Check known private folder prefixes
-	for _, prefix := range knownPrivateFolders {
-		if strings.HasPrefix(name, prefix) {
+// Returns true for known private folders (_components, _lib, etc.)
+// but NOT for dynamic route directories (_id, __slug, ___cat, _group_admin).
+func isPrivateFolder(name, _ string) bool {
+	// Check if it's a known private folder (exact match)
+	for _, private := range knownPrivateFolders {
+		if name == private {
 			return true
 		}
 	}
 
-	// Check if it's a symlink pointing to a bracket directory
-	// (these are our generated symlinks for Go imports)
-	if strings.HasPrefix(name, "_") {
-		if info, err := os.Lstat(path); err == nil {
-			if info.Mode()&os.ModeSymlink != 0 {
-				if target, err := os.Readlink(path); err == nil {
-					if strings.Contains(target, "[") {
-						return true // Skip - we'll scan the original bracket dir
-					}
-				}
-			}
-		}
-	}
+	// Dynamic routes (_id), catch-all (__slug), optional catch-all (___cat),
+	// and route groups (_group_name) are NOT private - they are routable
+	// The regex patterns will handle these in pathToRoute()
 
 	return false
 }
@@ -253,7 +247,9 @@ func (s *Scanner) registerMiddleware(tree *RouteTree, filePath string) error {
 }
 
 // pathToRoute converts a file path to a route pattern.
-// Example: app/users/[id]/route.go -> /users/{id}
+// Example: app/users/_id/route.go -> /users/{id}
+// Example: app/docs/__slug/route.go -> /docs/*
+// Example: app/_group_admin/settings/route.go -> /settings
 func (s *Scanner) pathToRoute(filePath string) string {
 	// Get path relative to app directory
 	rel, err := filepath.Rel(s.appDir, filepath.Dir(filePath))
@@ -265,27 +261,37 @@ func (s *Scanner) pathToRoute(filePath string) string {
 	routeSegments := make([]string, 0, len(segments))
 
 	for _, seg := range segments {
-		// Skip route groups (folder) - they don't affect the URL
+		// Skip route groups (_group_name) - they don't affect the URL
 		if routeGroupRe.MatchString(seg) {
 			continue
 		}
 
-		// Handle optional catch-all [[...param]]
+		// Handle optional catch-all (___param)
 		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
 			routeSegments = append(routeSegments, "*")
 			continue
 		}
 
-		// Handle catch-all [...param]
+		// Handle catch-all (__param)
 		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
 			routeSegments = append(routeSegments, "*")
 			continue
 		}
 
-		// Handle dynamic segment [param]
+		// Handle dynamic segment (_param) - but not known private folders
 		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
-			routeSegments = append(routeSegments, "{"+matches[1]+"}")
-			continue
+			// Check it's not a known private folder
+			isPrivate := false
+			for _, private := range knownPrivateFolders {
+				if seg == private {
+					isPrivate = true
+					break
+				}
+			}
+			if !isPrivate {
+				routeSegments = append(routeSegments, "{"+matches[1]+"}")
+				continue
+			}
 		}
 
 		routeSegments = append(routeSegments, seg)
@@ -299,10 +305,10 @@ func (s *Scanner) pathToRoute(filePath string) string {
 }
 
 // pathToScope converts a file path to a middleware scope.
-// Unlike pathToRoute, this preserves route group markers like "(dashboard)".
+// Unlike pathToRoute, this preserves route group markers like "_group_dashboard".
 // This is used for matching middleware to routes within the same route group.
 //
-// Example: app/(dashboard)/apps/middleware.go -> "(dashboard)/apps"
+// Example: app/_group_dashboard/apps/middleware.go -> "_group_dashboard/apps"
 // Example: app/api/users/route.go -> "api/users"
 // Example: app/middleware.go -> ""
 func (s *Scanner) pathToScope(filePath string) string {
@@ -836,7 +842,7 @@ func (s *Scanner) ScanLayoutInfo() ([]LayoutInfo, error) {
 // pathToPageRoute converts a page.templ file path to a route pattern.
 // Example: app/about/page.templ -> /about
 // Example: app/page.templ -> /
-// Example: app/users/[id]/page.templ -> /users/{id}
+// Example: app/users/_id/page.templ -> /users/{id}
 func (s *Scanner) pathToPageRoute(filePath string) string {
 	// Get path relative to app directory
 	rel, err := filepath.Rel(s.appDir, filepath.Dir(filePath))
@@ -848,7 +854,7 @@ func (s *Scanner) pathToPageRoute(filePath string) string {
 	routeSegments := make([]string, 0, len(segments))
 
 	for _, seg := range segments {
-		// Skip route groups (folder) - they don't affect the URL
+		// Skip route groups (_group_name) - they don't affect the URL
 		if routeGroupRe.MatchString(seg) {
 			continue
 		}
@@ -858,22 +864,32 @@ func (s *Scanner) pathToPageRoute(filePath string) string {
 			continue
 		}
 
-		// Handle optional catch-all [[...param]]
+		// Handle optional catch-all (___param)
 		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
 			routeSegments = append(routeSegments, "*")
 			continue
 		}
 
-		// Handle catch-all [...param]
+		// Handle catch-all (__param)
 		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
 			routeSegments = append(routeSegments, "*")
 			continue
 		}
 
-		// Handle dynamic segment [param]
+		// Handle dynamic segment (_param) - but not known private folders
 		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
-			routeSegments = append(routeSegments, "{"+matches[1]+"}")
-			continue
+			// Check it's not a known private folder
+			isPrivate := false
+			for _, private := range knownPrivateFolders {
+				if seg == private {
+					isPrivate = true
+					break
+				}
+			}
+			if !isPrivate {
+				routeSegments = append(routeSegments, "{"+matches[1]+"}")
+				continue
+			}
 		}
 
 		routeSegments = append(routeSegments, seg)
@@ -889,6 +905,7 @@ func (s *Scanner) pathToPageRoute(filePath string) string {
 // pathToLayoutPrefix converts a layout.templ file path to a path prefix.
 // Example: app/layout.templ -> /
 // Example: app/dashboard/layout.templ -> /dashboard
+// Example: app/_group_admin/layout.templ -> /
 func (s *Scanner) pathToLayoutPrefix(filePath string) string {
 	// Get path relative to app directory
 	rel, err := filepath.Rel(s.appDir, filepath.Dir(filePath))
@@ -900,7 +917,7 @@ func (s *Scanner) pathToLayoutPrefix(filePath string) string {
 	routeSegments := make([]string, 0, len(segments))
 
 	for _, seg := range segments {
-		// Skip route groups (folder) - they don't affect the URL
+		// Skip route groups (_group_name) - they don't affect the URL
 		if routeGroupRe.MatchString(seg) {
 			continue
 		}

@@ -70,10 +70,10 @@ app/
 │   ├── middleware.go         # Middleware for /api/*
 │   ├── users/
 │   │   ├── route.go          # GET /api/users
-│   │   └── [id]/
-│   │       └── route.go      # GET /api/users/:id
+│   │   └── _id/
+│   │       └── route.go      # GET /api/users/{id}
 │   └── posts/
-│       └── [...slug]/
+│       └── __slug/
 │           └── route.go      # GET /api/posts/* (catch-all)
 ├── proxy.go                  # Request interceptor (runs before routing)
 ├── page.templ                # HTML page for /
@@ -90,17 +90,24 @@ app/
 
 ## Route Patterns
 
+Fuego uses underscore-prefixed directories for dynamic routes (valid Go package names):
+
 | Pattern | Syntax | Example | Matches |
 |---------|--------|---------|---------|
 | Static | `folder/route.go` | `users/route.go` | `/api/users` |
-| Dynamic | `[param]` | `users/[id]/route.go` | `/api/users/123` |
-| Catch-all | `[...param]` | `docs/[...slug]/route.go` | `/api/docs/a/b/c` |
-| Optional | `[[...param]]` | `shop/[[...cat]]/route.go` | `/api/shop` and `/api/shop/*` |
-| Group | `(name)` | `(admin)/settings/route.go` | `/api/settings` (no /admin) |
-| Private | `_folder` | `_utils/` | Not routed |
+| Dynamic | `_param` | `users/_id/route.go` | `/api/users/123` |
+| Catch-all | `__param` | `docs/__slug/route.go` | `/api/docs/a/b/c` |
+| Optional | `___param` | `shop/___cat/route.go` | `/api/shop` and `/api/shop/*` |
+| Group | `_group_name` | `_group_admin/settings/route.go` | `/api/settings` (no /admin) |
+| Private | `_components`, `_utils`, etc. | `_utils/` | Not routed |
 
-**Note:** Fuego creates symlinks in `.fuego/imports/` for directories with `[brackets]` or `(parentheses)` 
-to enable valid Go imports. The `.fuego/` directory should be in `.gitignore`.
+**Naming Convention:**
+- `_name` - Single underscore = dynamic segment
+- `__name` - Double underscore = catch-all segment  
+- `___name` - Triple underscore = optional catch-all
+- `_group_name` - Route group (doesn't affect URL)
+
+**Note:** The underscore convention ensures all directories are valid Go package names without symlinks.
 
 ## Handler Signature
 
@@ -402,7 +409,7 @@ app.ServeOpenAPI(fuego.OpenAPIOptions{
 **Auto-documentation:**
 - Comments above handlers → summaries & descriptions
 - File structure → tags
-- `[param]` → path parameters
+- `_param` directories → path parameters
 
 ## Configuration (fuego.yaml)
 

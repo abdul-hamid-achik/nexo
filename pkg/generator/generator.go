@@ -17,7 +17,7 @@ import (
 
 // RouteConfig holds configuration for route generation.
 type RouteConfig struct {
-	Path    string   // Route path (e.g., "users/[id]")
+	Path    string   // Route path (e.g., "users/_id")
 	Methods []string // HTTP methods (e.g., ["GET", "PUT", "DELETE"])
 	AppDir  string   // App directory (default: "app")
 }
@@ -50,15 +50,17 @@ type Result struct {
 }
 
 // Regular expressions for parsing route paths
+// Using underscore convention for valid Go package names:
+//   - _param      -> dynamic segment (single underscore)
+//   - __param     -> catch-all segment (double underscore)
+//   - ___param    -> optional catch-all segment (triple underscore)
+//   - _group_name -> route group (doesn't affect URL)
 var (
-	dynamicSegmentRe   = regexp.MustCompile(`^\[([^\.\]]+)\]$`)
-	catchAllSegmentRe  = regexp.MustCompile(`^\[\.\.\.([^\]]+)\]$`)
-	optionalCatchAllRe = regexp.MustCompile(`^\[\[\.\.\.([^\]]+)\]\]$`)
-	routeGroupRe       = regexp.MustCompile(`^\(([^)]+)\)$`)
+	dynamicSegmentRe   = regexp.MustCompile(`^_([a-zA-Z][a-zA-Z0-9]*)$`)
+	catchAllSegmentRe  = regexp.MustCompile(`^__([a-zA-Z][a-zA-Z0-9]*)$`)
+	optionalCatchAllRe = regexp.MustCompile(`^___([a-zA-Z][a-zA-Z0-9]*)$`)
+	routeGroupRe       = regexp.MustCompile(`^_group_([a-zA-Z][a-zA-Z0-9_]*)$`)
 )
-
-// fuegoImportsDir is the directory where import symlinks are created
-const fuegoImportsDir = ".fuego/imports"
 
 // knownPrivateFolders contains folder prefixes that are private (not routable)
 // following Next.js conventions
@@ -72,18 +74,18 @@ var knownPrivateFolders = []string{
 }
 
 // isGeneratorPrivateFolder checks if a directory should be skipped during generation
-func isGeneratorPrivateFolder(name, path string) bool {
-	// Check known private folder prefixes
-	for _, prefix := range knownPrivateFolders {
-		if strings.HasPrefix(name, prefix) {
+// Returns true for known private folders (_components, _lib, etc.)
+// but NOT for dynamic route directories (_id, __slug, ___cat, _group_admin).
+func isGeneratorPrivateFolder(name, _ string) bool {
+	// Check if it's a known private folder (exact match)
+	for _, private := range knownPrivateFolders {
+		if name == private {
 			return true
 		}
 	}
 
-	// Skip .fuego directory
-	if name == ".fuego" {
-		return true
-	}
+	// Dynamic routes (_id), catch-all (__slug), optional catch-all (___cat),
+	// and route groups (_group_name) are NOT private - they are routable
 
 	return false
 }
@@ -330,6 +332,11 @@ func packageNameFromPath(path string) string {
 	segments := strings.Split(path, "/")
 	lastSeg := segments[len(segments)-1]
 
+	// Handle route groups (_group_name -> name)
+	if matches := routeGroupRe.FindStringSubmatch(lastSeg); len(matches) > 1 {
+		return cleanPackageName(matches[1])
+	}
+
 	// Clean dynamic segments
 	if matches := dynamicSegmentRe.FindStringSubmatch(lastSeg); len(matches) > 1 {
 		return cleanPackageName(matches[1])
@@ -367,21 +374,40 @@ func extractParams(path string) []ParamInfo {
 	segments := strings.Split(path, "/")
 
 	for _, seg := range segments {
+		// Handle optional catch-all (___param)
 		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
 			params = append(params, ParamInfo{
 				Name:       matches[1],
 				IsCatchAll: true,
 				IsOptional: true,
 			})
-		} else if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			continue
+		}
+
+		// Handle catch-all (__param)
+		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
 			params = append(params, ParamInfo{
 				Name:       matches[1],
 				IsCatchAll: true,
 			})
-		} else if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
-			params = append(params, ParamInfo{
-				Name: matches[1],
-			})
+			continue
+		}
+
+		// Handle dynamic segment (_param) - but not known private folders
+		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
+			// Check it's not a known private folder
+			isPrivate := false
+			for _, private := range knownPrivateFolders {
+				if seg == private {
+					isPrivate = true
+					break
+				}
+			}
+			if !isPrivate {
+				params = append(params, ParamInfo{
+					Name: matches[1],
+				})
+			}
 		}
 	}
 
@@ -393,27 +419,37 @@ func pathToPattern(path string) string {
 	var result []string
 
 	for _, seg := range segments {
-		// Skip route groups
-		if strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")") {
+		// Skip route groups (_group_name)
+		if routeGroupRe.MatchString(seg) {
 			continue
 		}
 
-		// Handle optional catch-all [[...param]]
+		// Handle optional catch-all (___param)
 		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
 			result = append(result, "*")
 			continue
 		}
 
-		// Handle catch-all [...param]
+		// Handle catch-all (__param)
 		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
 			result = append(result, "*")
 			continue
 		}
 
-		// Handle dynamic segment [param]
+		// Handle dynamic segment (_param) - but not known private folders
 		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
-			result = append(result, "{"+matches[1]+"}")
-			continue
+			// Check it's not a known private folder
+			isPrivate := false
+			for _, private := range knownPrivateFolders {
+				if seg == private {
+					isPrivate = true
+					break
+				}
+			}
+			if !isPrivate {
+				result = append(result, "{"+matches[1]+"}")
+				continue
+			}
 		}
 
 		result = append(result, seg)
@@ -563,11 +599,9 @@ type PageRegistration struct {
 
 	// Dynamic page support
 	Params         []PageParam // Parameters extracted from templ Page() signature
-	URLParams      []string    // Parameter names extracted from URL path (e.g., [slug] -> "slug")
+	URLParams      []string    // Parameter names extracted from URL path (e.g., _slug -> "slug")
 	HasParams      bool        // True if Page() accepts parameters
 	ParamSignature string      // Original signature from templ file (for comments)
-	UseSymlink     bool        // True if import path uses a symlink (bracket dir)
-	SymlinkPath    string      // Path to the symlink (if UseSymlink is true)
 }
 
 // LayoutRegistration holds information for layout registration.
@@ -749,13 +783,8 @@ func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 		return GenerateRoutesFile(cfg)
 	}
 
-	// Create import symlinks in .fuego/imports/ for directories with special characters
-	// This is necessary because Go import paths cannot contain brackets or parentheses
-	_, err = CreateImportSymlinks(appDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create import symlinks: %w", err)
-	}
-	// Note: We don't clean up symlinks - they need to persist for Go compilation
+	// With the underscore convention (_id, __slug, _group_name), all directories are valid Go packages
+	// No symlinks or import sanitization needed
 
 	fset := token.NewFileSet()
 
@@ -882,16 +911,11 @@ func scanPageFile(filePath, appDir, moduleName string) (*PageRegistration, error
 		return nil, err
 	}
 
-	// Extract URL parameters from the path (e.g., [slug] -> "slug")
+	// Extract URL parameters from the path (e.g., _slug -> "slug")
 	urlParams := extractURLParams(dir, appDir)
 
-	// Get import path (uses .fuego/imports/ if sanitization is needed)
+	// Get import path (direct path since directories are valid Go package names)
 	importPath := getImportPath(moduleName, relDir)
-	useSymlink := needsImportSanitization(relDir)
-	var symlinkPath string
-	if useSymlink {
-		symlinkPath = fuegoImportsDir + "/" + sanitizePathForImport(relDir)
-	}
 
 	pattern := pagePathToPattern(dir, appDir)
 	pkgName := packageNameFromDir(dir)
@@ -907,8 +931,6 @@ func scanPageFile(filePath, appDir, moduleName string) (*PageRegistration, error
 		URLParams:      urlParams,
 		HasParams:      hasParams,
 		ParamSignature: paramSignature,
-		UseSymlink:     useSymlink,
-		SymlinkPath:    symlinkPath,
 	}, nil
 }
 
@@ -970,9 +992,9 @@ func parseTemplParams(paramsStr string) []PageParam {
 	return params
 }
 
-// extractURLParams extracts parameter names from bracket directories in the path
-// e.g., "app/posts/[slug]" -> ["slug"]
-// e.g., "app/users/[id]/posts/[postId]" -> ["id", "postId"]
+// extractURLParams extracts parameter names from underscore-prefixed directories in the path
+// e.g., "app/posts/_slug" -> ["slug"]
+// e.g., "app/users/_id/posts/_postId" -> ["id", "postId"]
 func extractURLParams(dir, appDir string) []string {
 	rel, err := filepath.Rel(appDir, dir)
 	if err != nil {
@@ -983,27 +1005,36 @@ func extractURLParams(dir, appDir string) []string {
 	segments := strings.Split(rel, string(filepath.Separator))
 
 	for _, seg := range segments {
-		// Skip route groups
-		if strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")") {
+		// Skip route groups (_group_name)
+		if routeGroupRe.MatchString(seg) {
 			continue
 		}
 
-		// Extract param from [[...param]]
+		// Extract param from ___param (optional catch-all)
 		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
 			params = append(params, matches[1])
 			continue
 		}
 
-		// Extract param from [...param]
+		// Extract param from __param (catch-all)
 		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
 			params = append(params, matches[1])
 			continue
 		}
 
-		// Extract param from [param]
+		// Extract param from _param (dynamic) - but not known private folders
 		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
-			params = append(params, matches[1])
-			continue
+			// Check it's not a known private folder
+			isPrivate := false
+			for _, private := range knownPrivateFolders {
+				if seg == private {
+					isPrivate = true
+					break
+				}
+			}
+			if !isPrivate {
+				params = append(params, matches[1])
+			}
 		}
 	}
 
@@ -1063,49 +1094,8 @@ func validatePageParams(page *PageRegistration) []GenerationWarning {
 	return warnings
 }
 
-// sanitizePathForImport converts bracket directories and route groups to valid Go import path segments
-// e.g., "app/posts/[slug]" -> "app/posts/_slug"
-// e.g., "app/docs/[...path]" -> "app/docs/_catchall_path"
-// e.g., "app/(dashboard)/settings" -> "app/_group_dashboard/settings"
-func sanitizePathForImport(path string) string {
-	segments := strings.Split(path, string(filepath.Separator))
-	var sanitized []string
-
-	for _, seg := range segments {
-		// Handle (group) -> _group_groupname
-		if matches := routeGroupRe.FindStringSubmatch(seg); len(matches) > 1 {
-			sanitized = append(sanitized, "_group_"+matches[1])
-			continue
-		}
-
-		// Handle [[...param]] -> _opt_catchall_param
-		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
-			sanitized = append(sanitized, "_opt_catchall_"+matches[1])
-			continue
-		}
-
-		// Handle [...param] -> _catchall_param
-		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
-			sanitized = append(sanitized, "_catchall_"+matches[1])
-			continue
-		}
-
-		// Handle [param] -> _param
-		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
-			sanitized = append(sanitized, "_"+matches[1])
-			continue
-		}
-
-		sanitized = append(sanitized, seg)
-	}
-
-	return strings.Join(sanitized, string(filepath.Separator))
-}
-
-// needsImportSanitization checks if a path contains characters that are invalid in Go imports
-func needsImportSanitization(path string) bool {
-	return strings.Contains(path, "[") || strings.Contains(path, "(")
-}
+// Note: With the underscore convention (_id, __slug, _group_name),
+// directories are already valid Go package names. No sanitization needed.
 
 // scanLayoutFile scans a layout.templ file and returns registration info
 func scanLayoutFile(filePath, appDir, moduleName string) (*LayoutRegistration, error) {
@@ -1221,10 +1211,9 @@ func layoutPathToPrefix(dir, appDir string) string {
 func packageNameFromDir(dir string) string {
 	base := filepath.Base(dir)
 
-	// Handle route groups
-	if strings.HasPrefix(base, "(") && strings.HasSuffix(base, ")") {
-		base = strings.TrimPrefix(base, "(")
-		base = strings.TrimSuffix(base, ")")
+	// Handle route groups (_group_name -> name)
+	if matches := routeGroupRe.FindStringSubmatch(base); len(matches) > 1 {
+		base = matches[1]
 	}
 
 	return cleanPackageName(base)
@@ -1241,12 +1230,12 @@ func deriveTitle(dir, appDir string) string {
 	segments := strings.Split(rel, string(filepath.Separator))
 	for i := len(segments) - 1; i >= 0; i-- {
 		seg := segments[i]
-		// Skip route groups
-		if strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")") {
+		// Skip route groups (_group_name)
+		if routeGroupRe.MatchString(seg) {
 			continue
 		}
-		// Skip dynamic segments for title
-		if strings.HasPrefix(seg, "[") {
+		// Skip dynamic segments (_param), catch-all (__param), optional (___param)
+		if dynamicSegmentRe.MatchString(seg) || catchAllSegmentRe.MatchString(seg) || optionalCatchAllRe.MatchString(seg) {
 			continue
 		}
 		// Skip api
@@ -1431,27 +1420,37 @@ func dirToPattern(dir, appDir string) string {
 	var routeSegments []string
 
 	for _, seg := range segments {
-		// Skip route groups (folder) - they don't affect the URL
-		if strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")") {
+		// Skip route groups (_group_name) - they don't affect the URL
+		if routeGroupRe.MatchString(seg) {
 			continue
 		}
 
-		// Handle optional catch-all [[...param]]
+		// Handle optional catch-all (___param)
 		if matches := optionalCatchAllRe.FindStringSubmatch(seg); len(matches) > 1 {
 			routeSegments = append(routeSegments, "*")
 			continue
 		}
 
-		// Handle catch-all [...param]
+		// Handle catch-all (__param)
 		if matches := catchAllSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
 			routeSegments = append(routeSegments, "*")
 			continue
 		}
 
-		// Handle dynamic segment [param]
+		// Handle dynamic segment (_param) - but not known private folders
 		if matches := dynamicSegmentRe.FindStringSubmatch(seg); len(matches) > 1 {
-			routeSegments = append(routeSegments, "{"+matches[1]+"}")
-			continue
+			// Check it's not a known private folder
+			isPrivate := false
+			for _, private := range knownPrivateFolders {
+				if seg == private {
+					isPrivate = true
+					break
+				}
+			}
+			if !isPrivate {
+				routeSegments = append(routeSegments, "{"+matches[1]+"}")
+				continue
+			}
 		}
 
 		routeSegments = append(routeSegments, seg)
@@ -1614,292 +1613,8 @@ func isValidProxySignature(fn *ast.FuncDecl) bool {
 	return false
 }
 
-// ImportMapping represents a mapping from an original directory to its import symlink.
-type ImportMapping struct {
-	Original    string // Original path (e.g., "app/posts/[slug]" or "app/(dashboard)")
-	Sanitized   string // Sanitized path for import (e.g., "app/posts/_slug")
-	SymlinkPath string // Full path to the symlink in .fuego/imports/
-}
-
-// CreateImportSymlinks creates symlinks in .fuego/imports/ for directories that need sanitization.
-// This includes bracket directories ([param], [...param], [[...param]]) and route groups ((name)).
-//
-// IMPLEMENTATION (v0.9.10): Creates REAL directories with FILE-level symlinks.
-// For nested bracket directories like app/api/apps/[name]/deployments/[id]/route.go:
-//
-//  1. Create real directories for the full sanitized path:
-//     .fuego/imports/app/api/apps/_name/deployments/_id/ (real directory)
-//
-//  2. Symlink only the FILES inside each directory:
-//     .fuego/imports/app/api/apps/_name/deployments/_id/route.go -> [source]/route.go
-//
-// This approach avoids the problem of creating files inside symlinked directories
-// (which would write to the source tree instead of .fuego/imports/).
-//
-// This allows Go to resolve import paths like:
-//
-//	module/.fuego/imports/app/api/apps/_name/deployments/_id
-//
-// Returns the list of created directory mappings.
-func CreateImportSymlinks(appDir string) ([]ImportMapping, error) {
-	var mappings []ImportMapping
-
-	// Get the base directory (parent of appDir, or current dir if appDir is relative)
-	baseDir := filepath.Dir(appDir)
-	if baseDir == "." || baseDir == "" {
-		baseDir = "."
-	}
-
-	// Determine the .fuego/imports directory location (relative to baseDir)
-	importsDir := filepath.Join(baseDir, fuegoImportsDir)
-
-	// Collect all paths that need symlinks and their bracket segments
-	type bracketInfo struct {
-		relPath  string // Full relative path from baseDir (e.g., "app/api/apps/[name]/deployments/[id]")
-		segments []int  // Indices of segments that are bracket directories
-	}
-
-	var pathsToProcess []bracketInfo
-	var needsAnySymlinks bool
-
-	err := filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Skip hidden directories
-		if info.IsDir() && strings.HasPrefix(info.Name(), ".") {
-			return filepath.SkipDir
-		}
-
-		// Skip private folders
-		if info.IsDir() {
-			for _, prefix := range knownPrivateFolders {
-				if strings.HasPrefix(info.Name(), prefix) {
-					return filepath.SkipDir
-				}
-			}
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		// Check if this is a relevant file
-		name := info.Name()
-		isRelevant := name == "route.go" || name == "middleware.go" || name == "proxy.go" ||
-			name == "page.templ" || name == "layout.templ"
-		if !isRelevant {
-			return nil
-		}
-
-		// Get the directory containing this file
-		dir := filepath.Dir(path)
-
-		// Get path relative to baseDir
-		relDir, err := filepath.Rel(baseDir, dir)
-		if err != nil {
-			return fmt.Errorf("failed to get relative path for %s: %w", dir, err)
-		}
-
-		// Check if this path needs sanitization
-		if !needsImportSanitization(relDir) {
-			return nil
-		}
-
-		needsAnySymlinks = true
-
-		// Find all bracket/group segments in the path
-		segments := strings.Split(relDir, string(filepath.Separator))
-		var bracketIndices []int
-		for i, seg := range segments {
-			if strings.Contains(seg, "[") || (strings.HasPrefix(seg, "(") && strings.HasSuffix(seg, ")")) {
-				bracketIndices = append(bracketIndices, i)
-			}
-		}
-
-		pathsToProcess = append(pathsToProcess, bracketInfo{
-			relPath:  relDir,
-			segments: bracketIndices,
-		})
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan for directories needing symlinks: %w", err)
-	}
-
-	if !needsAnySymlinks {
-		return nil, nil // No symlinks needed
-	}
-
-	// Create .fuego/imports directory
-	if err := os.MkdirAll(importsDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create %s directory: %w", importsDir, err)
-	}
-
-	// NEW APPROACH: Create real directories for everything, symlink only files
-	// This avoids the problem where creating paths inside a symlink goes to the source tree.
-	//
-	// For app/api/apps/[name]/deployments/[id]/route.go:
-	// - Create: .fuego/imports/app/api/apps/_name/deployments/_id/ (real directories)
-	// - Symlink: .fuego/imports/app/api/apps/_name/deployments/_id/route.go -> [source]/route.go
-
-	// Collect unique directories that need to be created (deduplicated)
-	dirsToCreate := make(map[string]string) // sanitizedPath -> originalPath
-
-	for _, pathInfo := range pathsToProcess {
-		sanitizedPath := sanitizePathForImport(pathInfo.relPath)
-		if _, exists := dirsToCreate[sanitizedPath]; !exists {
-			dirsToCreate[sanitizedPath] = pathInfo.relPath
-		}
-	}
-
-	// Create all directories and symlink their files
-	for sanitizedPath, originalRelPath := range dirsToCreate {
-		sanitizedFullPath := filepath.Join(importsDir, sanitizedPath)
-		originalFullPath := filepath.Join(baseDir, originalRelPath)
-
-		// Create the directory (real, not a symlink)
-		if err := os.MkdirAll(sanitizedFullPath, 0755); err != nil {
-			_ = os.RemoveAll(importsDir)
-			return nil, fmt.Errorf("failed to create directory %s: %w", sanitizedFullPath, err)
-		}
-
-		// Read the original directory and symlink relevant files
-		files, err := os.ReadDir(originalFullPath)
-		if err != nil {
-			_ = os.RemoveAll(importsDir)
-			return nil, fmt.Errorf("failed to read directory %s: %w", originalFullPath, err)
-		}
-
-		for _, file := range files {
-			if file.IsDir() {
-				continue
-			}
-			// Only symlink Go source files (not test files, not generated files)
-			name := file.Name()
-			isRelevant := (strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")) ||
-				strings.HasSuffix(name, ".templ")
-			if !isRelevant {
-				continue
-			}
-
-			srcFile := filepath.Join(originalFullPath, name)
-			dstFile := filepath.Join(sanitizedFullPath, name)
-
-			// Check if symlink already exists and is correct
-			if existingInfo, err := os.Lstat(dstFile); err == nil {
-				if existingInfo.Mode()&os.ModeSymlink != 0 {
-					target, err := os.Readlink(dstFile)
-					if err == nil {
-						expectedTarget, _ := filepath.Rel(filepath.Dir(dstFile), srcFile)
-						if target == expectedTarget {
-							// Symlink is correct, skip
-							continue
-						}
-					}
-				}
-				// Remove existing file/symlink that doesn't match
-				if err := os.Remove(dstFile); err != nil {
-					_ = os.RemoveAll(importsDir)
-					return nil, fmt.Errorf("failed to remove existing file %s: %w", dstFile, err)
-				}
-			}
-
-			// Calculate relative path from dstFile to srcFile
-			relTarget, err := filepath.Rel(filepath.Dir(dstFile), srcFile)
-			if err != nil {
-				_ = os.RemoveAll(importsDir)
-				return nil, fmt.Errorf("failed to calculate relative path for file symlink: %w", err)
-			}
-
-			if err := os.Symlink(relTarget, dstFile); err != nil {
-				_ = os.RemoveAll(importsDir)
-				return nil, fmt.Errorf("failed to create file symlink %s -> %s: %w", dstFile, relTarget, err)
-			}
-		}
-
-		mappings = append(mappings, ImportMapping{
-			Original:    originalFullPath,
-			Sanitized:   sanitizedPath,
-			SymlinkPath: sanitizedFullPath,
-		})
-	}
-
-	return mappings, nil
-}
-
-// CleanupImportSymlinks removes the .fuego directory and all its contents.
-// If baseDir is empty, it uses the current directory.
-func CleanupImportSymlinks(baseDir string) error {
-	if baseDir == "" {
-		baseDir = "."
-	}
-	return os.RemoveAll(filepath.Join(baseDir, ".fuego"))
-}
-
-// getImportPath returns the import path for a directory, using .fuego/imports/ if sanitization is needed.
+// getImportPath returns the import path for a directory.
+// With the underscore convention (_id, __slug, _group_name), all directories are valid Go package names.
 func getImportPath(moduleName, relDir string) string {
-	if needsImportSanitization(relDir) {
-		sanitizedRelDir := sanitizePathForImport(relDir)
-		return moduleName + "/" + fuegoImportsDir + "/" + filepath.ToSlash(sanitizedRelDir)
-	}
 	return moduleName + "/" + filepath.ToSlash(relDir)
-}
-
-// Deprecated: CreateDynamicDirSymlinks is deprecated, use CreateImportSymlinks instead.
-// This function is kept for backward compatibility but now delegates to CreateImportSymlinks.
-func CreateDynamicDirSymlinks(appDir string) ([]ImportMapping, func(), error) {
-	mappings, err := CreateImportSymlinks(appDir)
-	baseDir := filepath.Dir(appDir)
-	if baseDir == "." || baseDir == "" {
-		baseDir = "."
-	}
-	cleanup := func() {
-		_ = CleanupImportSymlinks(baseDir)
-	}
-	return mappings, cleanup, err
-}
-
-// Deprecated: CleanupDynamicDirSymlinks is deprecated, use CleanupImportSymlinks instead.
-func CleanupDynamicDirSymlinks(appDir string) error {
-	baseDir := filepath.Dir(appDir)
-	if baseDir == "." || baseDir == "" {
-		baseDir = "."
-	}
-	return CleanupImportSymlinks(baseDir)
-}
-
-// SymlinkMapping is deprecated, use ImportMapping instead.
-type SymlinkMapping = ImportMapping
-
-// sanitizeDirName converts a bracket directory or route group name to a valid Go identifier.
-// e.g., "[slug]" -> "_slug"
-// e.g., "[...path]" -> "_catchall_path"
-// e.g., "[[...slug]]" -> "_opt_catchall_slug"
-// e.g., "(dashboard)" -> "_group_dashboard"
-func sanitizeDirName(name string) string {
-	// Handle (group) -> _group_groupname
-	if matches := routeGroupRe.FindStringSubmatch(name); len(matches) > 1 {
-		return "_group_" + matches[1]
-	}
-
-	// Handle [[...param]] -> _opt_catchall_param
-	if matches := optionalCatchAllRe.FindStringSubmatch(name); len(matches) > 1 {
-		return "_opt_catchall_" + matches[1]
-	}
-
-	// Handle [...param] -> _catchall_param
-	if matches := catchAllSegmentRe.FindStringSubmatch(name); len(matches) > 1 {
-		return "_catchall_" + matches[1]
-	}
-
-	// Handle [param] -> _param
-	if matches := dynamicSegmentRe.FindStringSubmatch(name); len(matches) > 1 {
-		return "_" + matches[1]
-	}
-
-	return name
 }
