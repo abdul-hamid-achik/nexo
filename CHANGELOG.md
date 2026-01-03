@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.10] - 2025-01-03
+
+### Fixed
+
+- **Nested Bracket Directory Symlinks** (Complete fix)
+  - Completely fixed symlink handling for nested bracket directories like `[name]/deployments/[id]`
+  - Previous implementation created symlinks to directories which caused issues with source tree modification
+  - New implementation creates real directories in `.fuego/imports/` and only symlinks individual files
+  - This approach:
+    - Creates `.fuego/imports/app/api/apps/_name/deployments/_id/` as real directories
+    - Symlinks each `.go` and `.templ` file inside to the source files
+    - Avoids any modifications to the source tree
+    - Works correctly with arbitrarily deep nesting
+  - All Go import paths now resolve correctly through the mirrored directory structure
+
+### Changed
+
+- **Symlink Strategy Rewrite**
+  - Changed from directory symlinks to file symlinks within real directories
+  - This prevents the issue where nested symlinks were created in the source tree
+  - Import resolution now works through pure directory traversal with file-level symlinks
+
 ## [0.9.9] - 2025-01-03
 
 ### Fixed

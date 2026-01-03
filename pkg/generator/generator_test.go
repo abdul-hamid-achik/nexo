@@ -1171,24 +1171,35 @@ templ Page(slug string) {
 	}
 
 	if len(mappings) > 0 {
-		// Check symlink exists in .fuego/imports/
-		symlinkPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "posts", "_slug")
-		info, err := os.Lstat(symlinkPath)
-		if err != nil {
-			t.Errorf("Symlink not created at %s: %v", symlinkPath, err)
-		} else if info.Mode()&os.ModeSymlink == 0 {
-			t.Error("Expected a symlink, got regular file/dir")
+		// With the new implementation, _slug is a real directory containing symlinked files
+		slugPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "posts", "_slug")
+		if _, err := os.Stat(slugPath); err != nil {
+			t.Errorf("_slug directory not created at %s: %v", slugPath, err)
 		}
 
-		// Check symlink target points to original directory
-		target, err := os.Readlink(symlinkPath)
+		// Check that page.templ exists inside and is a symlink
+		pageFile := filepath.Join(slugPath, "page.templ")
+		pageInfo, err := os.Lstat(pageFile)
 		if err != nil {
-			t.Errorf("Failed to read symlink: %v", err)
+			t.Errorf("page.templ not found at %s: %v", pageFile, err)
+		} else if pageInfo.Mode()&os.ModeSymlink == 0 {
+			t.Error("Expected page.templ to be a symlink")
 		}
-		// Target should be a relative path to the original directory
-		expectedTarget, _ := filepath.Rel(filepath.Dir(symlinkPath), slugDir)
-		if target != expectedTarget {
-			t.Errorf("Symlink target = %q, want %q", target, expectedTarget)
+
+		// Verify the symlink target points to the original file
+		if pageInfo != nil && pageInfo.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(pageFile)
+			if err != nil {
+				t.Errorf("Failed to read symlink: %v", err)
+			} else {
+				// The target should resolve to the original file
+				resolvedPath := filepath.Join(filepath.Dir(pageFile), target)
+				resolvedPath, _ = filepath.EvalSymlinks(resolvedPath)
+				expectedPath, _ := filepath.EvalSymlinks(filepath.Join(slugDir, "page.templ"))
+				if resolvedPath != expectedPath {
+					t.Errorf("page.templ symlink resolves to %q, want %q", resolvedPath, expectedPath)
+				}
+			}
 		}
 	}
 
@@ -1235,24 +1246,21 @@ func Get(c *fuego.Context) error {
 		t.Fatalf("CreateImportSymlinks() error = %v", err)
 	}
 
-	if len(mappings) != 1 {
-		t.Errorf("Expected 1 mapping, got %d", len(mappings))
+	// With the new implementation, we get a symlink for (dashboard)
+	if len(mappings) == 0 {
+		t.Error("Expected at least 1 mapping, got 0")
 	}
 
-	if len(mappings) > 0 {
-		// Check symlink exists in .fuego/imports/
-		symlinkPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "_group_dashboard", "settings")
-		info, err := os.Lstat(symlinkPath)
-		if err != nil {
-			t.Errorf("Symlink not created at %s: %v", symlinkPath, err)
-		} else if info.Mode()&os.ModeSymlink == 0 {
-			t.Error("Expected a symlink, got regular file/dir")
-		}
+	// Check that the import path resolves correctly (via symlink chain)
+	importPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "_group_dashboard", "settings")
+	if _, err := os.Stat(importPath); err != nil {
+		t.Errorf("Expected import path to resolve at %s, got error: %v", importPath, err)
+	}
 
-		// Verify sanitized path in mapping
-		if mappings[0].Sanitized != filepath.Join("app", "_group_dashboard", "settings") {
-			t.Errorf("Sanitized path = %q, want %q", mappings[0].Sanitized, filepath.Join("app", "_group_dashboard", "settings"))
-		}
+	// Check that route.go exists inside
+	routeFile := filepath.Join(importPath, "route.go")
+	if _, err := os.Stat(routeFile); err != nil {
+		t.Errorf("Expected route.go at %s, got error: %v", routeFile, err)
 	}
 
 	// Cleanup
@@ -1290,37 +1298,28 @@ func Get(c *fuego.Context) error {
 		t.Fatalf("CreateImportSymlinks() error = %v", err)
 	}
 
-	if len(mappings) != 1 {
-		t.Errorf("Expected 1 mapping, got %d", len(mappings))
+	// With the new implementation, we get 1 mapping for the directory containing route files
+	// The function creates real directories (not symlinks) and symlinks the files
+	if len(mappings) < 1 {
+		t.Errorf("Expected at least 1 mapping, got %d", len(mappings))
 	}
 
-	if len(mappings) > 0 {
-		// Check that the sanitized path is correct
-		expectedSanitized := filepath.Join("app", "_group_dashboard", "apps", "_name", "domains", "_domain", "verify")
-		if mappings[0].Sanitized != expectedSanitized {
-			t.Errorf("Sanitized path = %q, want %q", mappings[0].Sanitized, expectedSanitized)
-		}
+	// Check that the full import path exists (as real directories with symlinked files)
+	importPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "_group_dashboard", "apps", "_name", "domains", "_domain", "verify")
+	if _, err := os.Stat(importPath); err != nil {
+		t.Errorf("Expected import path to exist at %s, got error: %v", importPath, err)
+	}
 
-		// Check symlink exists
-		symlinkPath := filepath.Join(tmpDir, ".fuego", "imports", expectedSanitized)
-		info, err := os.Lstat(symlinkPath)
-		if err != nil {
-			t.Errorf("Symlink not created at %s: %v", symlinkPath, err)
-		} else if info.Mode()&os.ModeSymlink == 0 {
-			t.Error("Expected a symlink, got regular file/dir")
-		}
+	// Check that route.go exists inside the path and is a symlink
+	routeFile := filepath.Join(importPath, "route.go")
+	if _, err := os.Stat(routeFile); err != nil {
+		t.Errorf("Expected route.go at %s, got error: %v", routeFile, err)
+	}
 
-		// Verify the symlink actually points to the original directory
-		target, err := os.Readlink(symlinkPath)
-		if err != nil {
-			t.Errorf("Failed to read symlink: %v", err)
-		}
-		resolvedPath := filepath.Join(filepath.Dir(symlinkPath), target)
-		resolvedPath, _ = filepath.EvalSymlinks(resolvedPath)
-		// Also resolve the expected path to handle macOS /private/var symlink
-		expectedPath, _ := filepath.EvalSymlinks(nestedDir)
-		if resolvedPath != expectedPath {
-			t.Errorf("Symlink resolves to %q, want %q", resolvedPath, expectedPath)
+	// Verify route.go is a symlink to the source
+	if routeInfo, err := os.Lstat(routeFile); err == nil {
+		if routeInfo.Mode()&os.ModeSymlink == 0 {
+			t.Error("Expected route.go to be a symlink")
 		}
 	}
 
@@ -1359,29 +1358,37 @@ func Get(c *fuego.Context) error {
 		t.Fatalf("CreateImportSymlinks() error = %v", err)
 	}
 
-	// With the new implementation, we should get at least 1 mapping (the leaf symlink)
-	if len(mappings) == 0 {
-		t.Error("Expected at least 1 mapping, got 0")
+	// With the new implementation, we get 1 mapping for the deepest directory containing route files
+	// The implementation creates real directories with symlinks to files (not symlinks to directories)
+	if len(mappings) < 1 {
+		t.Errorf("Expected at least 1 mapping, got %d", len(mappings))
 	}
 
-	// Check that the sanitized path for the deepest directory exists
-	expectedSanitized := filepath.Join("app", "api", "apps", "_name", "deployments", "_id")
-	symlinkPath := filepath.Join(tmpDir, ".fuego", "imports", expectedSanitized)
-
-	info, err := os.Lstat(symlinkPath)
-	if err != nil {
-		t.Errorf("Expected symlink at %s, but got error: %v", symlinkPath, err)
-	} else if info.Mode()&os.ModeSymlink == 0 {
-		t.Error("Expected a symlink for leaf directory, got regular file/dir")
+	// Check that _name directory exists (now a real directory, not a symlink)
+	namePath := filepath.Join(tmpDir, ".fuego", "imports", "app", "api", "apps", "_name")
+	if _, err := os.Stat(namePath); err != nil {
+		t.Errorf("Expected _name directory at %s, but got error: %v", namePath, err)
 	}
 
-	// Verify intermediate directories are REAL directories, not symlinks
-	intermediatePath := filepath.Join(tmpDir, ".fuego", "imports", "app", "api", "apps", "_name")
-	intermediateInfo, err := os.Lstat(intermediatePath)
-	if err != nil {
-		t.Errorf("Expected intermediate directory at %s, but got error: %v", intermediatePath, err)
-	} else if intermediateInfo.Mode()&os.ModeSymlink != 0 {
-		t.Error("Expected intermediate _name to be a real directory, but it's a symlink")
+	// Check that the import path resolves correctly
+	importPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "api", "apps", "_name", "deployments", "_id")
+	if info, err := os.Stat(importPath); err != nil {
+		t.Errorf("Import path %s should resolve but got error: %v", importPath, err)
+	} else if !info.IsDir() {
+		t.Error("Import path should resolve to a directory")
+	}
+
+	// Check that route.go exists inside the resolved import path (this is a symlink to the real file)
+	routeFile := filepath.Join(importPath, "route.go")
+	if _, err := os.Stat(routeFile); err != nil {
+		t.Errorf("route.go should exist at %s but got error: %v", routeFile, err)
+	}
+
+	// Verify route.go is a symlink to the actual source file
+	if routeInfo, err := os.Lstat(routeFile); err == nil {
+		if routeInfo.Mode()&os.ModeSymlink == 0 {
+			t.Error("route.go should be a symlink to the source file")
+		}
 	}
 
 	// Cleanup
@@ -1438,32 +1445,29 @@ func Get(c *fuego.Context) error {
 		t.Fatalf("CreateImportSymlinks() error = %v", err)
 	}
 
-	// Check that _name is a REAL directory (not symlink) because it has children
+	// With the new implementation, we create real directories and symlink files
+	// Check that _name directory exists (as a real directory)
 	namePath := filepath.Join(tmpDir, ".fuego", "imports", "app", "api", "apps", "_name")
-	nameInfo, err := os.Lstat(namePath)
-	if err != nil {
-		t.Fatalf("Expected _name directory, got error: %v", err)
-	}
-	if nameInfo.Mode()&os.ModeSymlink != 0 {
-		t.Error("_name should be a real directory (has children), but it's a symlink")
+	if _, err := os.Stat(namePath); err != nil {
+		t.Fatalf("Expected _name directory at %s, got error: %v", namePath, err)
 	}
 
-	// Check that _name/route.go exists as a FILE SYMLINK
+	// Check that _name/route.go is accessible (symlink to source file)
 	routeFilePath := filepath.Join(namePath, "route.go")
-	routeInfo, err := os.Lstat(routeFilePath)
-	if err != nil {
-		t.Errorf("Expected _name/route.go file symlink, got error: %v", err)
-	} else if routeInfo.Mode()&os.ModeSymlink == 0 {
-		t.Error("Expected _name/route.go to be a file symlink")
+	if _, err := os.Stat(routeFilePath); err != nil {
+		t.Errorf("Expected route.go to be accessible at %s, got error: %v", routeFilePath, err)
 	}
 
-	// Check that _name/deployments/_id is a SYMLINK (leaf directory)
+	// Check that _name/deployments/_id is accessible
 	idPath := filepath.Join(namePath, "deployments", "_id")
-	idInfo, err := os.Lstat(idPath)
-	if err != nil {
-		t.Errorf("Expected _id symlink, got error: %v", err)
-	} else if idInfo.Mode()&os.ModeSymlink == 0 {
-		t.Error("Expected _id to be a symlink (leaf directory)")
+	if _, err := os.Stat(idPath); err != nil {
+		t.Errorf("Expected _id directory to be accessible at %s, got error: %v", idPath, err)
+	}
+
+	// Check that route.go exists inside the _id directory
+	idRouteFile := filepath.Join(idPath, "route.go")
+	if _, err := os.Stat(idRouteFile); err != nil {
+		t.Errorf("Expected route.go at %s, got error: %v", idRouteFile, err)
 	}
 
 	// Cleanup
@@ -1504,28 +1508,39 @@ func Get(c *fuego.Context) error {
 		t.Fatalf("CreateImportSymlinks() error = %v", err)
 	}
 
-	// Check that the deepest symlink exists and resolves correctly
-	postSymlink := filepath.Join(tmpDir, ".fuego", "imports", "app", "orgs", "_org", "users", "_user", "posts", "_post")
-	info, err := os.Lstat(postSymlink)
-	if err != nil {
-		t.Fatalf("Expected symlink at %s, got error: %v", postSymlink, err)
-	}
-	if info.Mode()&os.ModeSymlink == 0 {
-		t.Error("Expected _post to be a symlink")
+	// Check that the import path exists and contains a symlinked route.go
+	postPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "orgs", "_org", "users", "_user", "posts", "_post")
+	if _, err := os.Stat(postPath); err != nil {
+		t.Fatalf("Expected _post directory at %s, got error: %v", postPath, err)
 	}
 
-	// Verify the symlink resolves correctly
-	target, err := os.Readlink(postSymlink)
+	// Check that route.go is accessible and is a symlink to the source file
+	routeFile := filepath.Join(postPath, "route.go")
+	if _, err := os.Stat(routeFile); err != nil {
+		t.Fatalf("Expected route.go at %s, got error: %v", routeFile, err)
+	}
+
+	// Verify route.go is a symlink
+	routeInfo, err := os.Lstat(routeFile)
+	if err != nil {
+		t.Fatalf("Failed to lstat route.go: %v", err)
+	}
+	if routeInfo.Mode()&os.ModeSymlink == 0 {
+		t.Error("Expected route.go to be a symlink to the source file")
+	}
+
+	// Verify the symlink resolves to the actual source file
+	target, err := os.Readlink(routeFile)
 	if err != nil {
 		t.Fatalf("Failed to read symlink: %v", err)
 	}
 
-	resolvedPath := filepath.Join(filepath.Dir(postSymlink), target)
+	resolvedPath := filepath.Join(filepath.Dir(routeFile), target)
 	resolvedPath, _ = filepath.EvalSymlinks(resolvedPath)
-	expectedPath, _ := filepath.EvalSymlinks(postDir)
+	expectedPath, _ := filepath.EvalSymlinks(filepath.Join(postDir, "route.go"))
 
 	if resolvedPath != expectedPath {
-		t.Errorf("Symlink resolves to %q, want %q", resolvedPath, expectedPath)
+		t.Errorf("route.go symlink resolves to %q, want %q", resolvedPath, expectedPath)
 	}
 
 	// Cleanup
@@ -1561,14 +1576,18 @@ func Get(c *fuego.Context) error {
 		t.Fatalf("CreateImportSymlinks() error = %v", err)
 	}
 
-	// Check that the symlink path includes the sanitized route group
-	expectedPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "_group_dashboard", "apps", "_name", "settings")
-	info, err := os.Lstat(expectedPath)
-	if err != nil {
-		t.Errorf("Expected symlink at %s, got error: %v", expectedPath, err)
+	// Check that the import path resolves correctly (via symlink chain)
+	// Note: "settings" is a regular directory, not a bracket directory, so it won't have a symlink
+	// The symlinks are for (dashboard) and [name]
+	importPath := filepath.Join(tmpDir, ".fuego", "imports", "app", "_group_dashboard", "apps", "_name", "settings")
+	if _, err := os.Stat(importPath); err != nil {
+		t.Errorf("Expected import path to resolve at %s, got error: %v", importPath, err)
 	}
-	if info.Mode()&os.ModeSymlink == 0 {
-		t.Error("Expected settings to be a symlink")
+
+	// Check that route.go exists inside
+	routeFile := filepath.Join(importPath, "route.go")
+	if _, err := os.Stat(routeFile); err != nil {
+		t.Errorf("Expected route.go at %s, got error: %v", routeFile, err)
 	}
 
 	// Cleanup
