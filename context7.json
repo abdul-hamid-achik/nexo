@@ -25,7 +25,7 @@
     "Page templates must use templ syntax with the Page() component (with or without parameters)",
     "Dynamic page routes use [param] directories with Page(param Type) signatures",
     "Page() parameter names should match directory bracket names for automatic URL parameter wiring",
-    "Fuego creates symlinks (_slug, _id) for bracket directories due to Go import path restrictions",
+    "Fuego creates file-level symlinks in .fuego/imports/ for nested bracket directories - real directories for intermediates, file symlinks for .go/.templ files",
     "Generated symlinks are added to .gitignore and should not be committed",
     "If Page() parameters don't match URL parameters, a warning is shown but the page still renders",
     "Layout templates must accept children... parameter",
@@ -61,20 +61,29 @@
     "Comments are extracted for OpenAPI: first line = summary, rest = description",
     "Tags are automatically derived from directory structure (e.g., app/api/users -> 'users' tag)",
     "Path parameters are automatically detected from [param] segments",
-    "Reference docs/api/openapi.mdx for OpenAPI configuration and best practices"
+    "Reference docs/api/openapi.mdx for OpenAPI configuration and best practices",
+    "Use c.SSE() to create Server-Sent Events streams for real-time updates",
+    "SSEWriter methods: Send(), SendData(), SendJSON(), SendComment(), SendRetry(), SendID(), IsClosed(), Close()",
+    "Always call defer sse.Close() and check sse.IsClosed() before sending in loops",
+    "Use c.Cookie(name) to read cookie values from requests",
+    "Use c.SetCookie(cookie) to set HTTP cookies on responses",
+    "Use c.GetBool(key) to retrieve boolean values from context storage"
   ],
   "previousVersions": [
+    {
+      "tag": "v0.9.10"
+    },
+    {
+      "tag": "v0.9.9"
+    },
+    {
+      "tag": "v0.9.8"
+    },
     {
       "tag": "v0.7.4"
     },
     {
       "tag": "v0.6.0"
-    },
-    {
-      "tag": "v0.5.0"
-    },
-    {
-      "tag": "v0.4.3"
     }
   ]
 }

@@ -350,7 +350,7 @@ app/
     └── Button.templ          # NOT routable (private)
 ```
 
-**Note:** Fuego creates symlinks in `.fuego/imports/` for directories with `[brackets]` or `(parentheses)` to enable valid Go imports. The `.fuego/` directory is auto-generated and should be in `.gitignore`.
+**Note:** Fuego creates file-level symlinks in `.fuego/imports/` for files within directories containing `[brackets]` or `(parentheses)` to enable valid Go imports. For nested bracket directories (e.g., `[name]/deployments/[id]`), real intermediate directories are created with individual file symlinks at each level. The `.fuego/` directory is auto-generated and should be in `.gitignore`.
 
 ## Middleware Templates
 

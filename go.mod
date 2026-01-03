@@ -3,7 +3,7 @@ module github.com/abdul-hamid-achik/fuego
 go 1.25.5
 
 require (
-	github.com/a-h/templ v0.3.960
+	github.com/a-h/templ v0.3.977
 	github.com/charmbracelet/huh v0.6.0
 	github.com/fatih/color v1.18.0
 	github.com/fsnotify/fsnotify v1.9.0

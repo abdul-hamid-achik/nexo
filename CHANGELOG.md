@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.11] - 2025-01-03
+
+### Changed
+
+- **Documentation Updates**
+  - Updated `context7.json` with 6 new rules for recent features (SSE, Cookie methods, GetBool)
+  - Updated symlink strategy explanation to clarify file-level symlinks for nested bracket directories
+  - Added version tags v0.9.8, v0.9.9, v0.9.10 to Context7 previousVersions for better AI assistant support
+  - Clarified AGENTS.md symlink documentation with example of nested bracket directories
+  - Updated templ dependency from v0.3.960 to v0.3.977 to match latest generator version
+
+### Added
+
+- **Context7 Rules**
+  - SSE (Server-Sent Events) streaming documentation
+  - Cookie handling methods (Cookie(), SetCookie())
+  - Context storage GetBool() method
+  - File-level symlink strategy for nested bracket directories
+
 ## [0.9.10] - 2025-01-03
 
 ### Fixed
