@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.4] - 2025-01-04
+
+### Changed
+
+- **Documentation**
+  - Updated all routing documentation to use underscore convention (`_id`, `__slug`, `___slug`, `_group_name`)
+  - Replaced legacy bracket syntax (`[id]`, `[...slug]`, `[[...slug]]`, `(group)`) throughout docs
+  - Added info callouts explaining the underscore convention benefits (valid Go package names)
+  - Updated context7.json with v0.11.3 version reference
+
 ## [0.11.3] - 2025-01-03
 
 ### Fixed
