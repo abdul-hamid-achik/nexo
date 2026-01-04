@@ -3,11 +3,13 @@ package commands
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -33,13 +35,15 @@ Example:
 }
 
 var (
-	devPort string
-	devHost string
+	devPort    string
+	devHost    string
+	devVerbose bool
 )
 
 func init() {
 	devCmd.Flags().StringVarP(&devPort, "port", "p", "3000", "Port to run the server on")
 	devCmd.Flags().StringVarP(&devHost, "host", "H", "0.0.0.0", "Host to bind to")
+	devCmd.Flags().BoolVarP(&devVerbose, "verbose", "v", false, "Show detailed file watching and rebuild info")
 }
 
 // ensureFuegoModule checks if the fuego module can be resolved and adds a replace
@@ -316,13 +320,27 @@ func runDev(cmd *cobra.Command, args []string) {
 		})
 	}
 
+	// Also watch styles directory for CSS changes
+	if tools.HasStyles() {
+		stylesDir := "styles"
+		if err := watcher.Add(stylesDir); err == nil {
+			if devVerbose {
+				fmt.Printf("  %s Watching: %s\n", cyan("→"), stylesDir)
+			}
+		}
+	}
+
+	if devVerbose {
+		fmt.Printf("  %s Verbose mode enabled\n", cyan("ℹ"))
+	}
+
 	fmt.Printf("  %s Watching for changes...\n", green("✓"))
 	fmt.Printf("\n  ➜ Local:   %s\n", cyan(fmt.Sprintf("http://localhost:%s", devPort)))
 	fmt.Printf("  ➜ Network: %s\n\n", cyan(fmt.Sprintf("http://%s:%s", devHost, devPort)))
 
-	// Debounce channel
+	// Debounce channel - increased from 100ms to 300ms for more reliable rebuilds
 	var debounceTimer *time.Timer
-	debounceDuration := 100 * time.Millisecond
+	debounceDuration := 300 * time.Millisecond
 
 	// Signal handling
 	signals := make(chan os.Signal, 1)
@@ -340,9 +358,25 @@ func runDev(cmd *cobra.Command, args []string) {
 				continue
 			}
 
+			// Handle new directory creation - add to watcher dynamically
+			if event.Op&fsnotify.Create != 0 {
+				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+					dirName := info.Name()
+					// Skip hidden directories and common non-source directories
+					if !strings.HasPrefix(dirName, ".") && dirName != "node_modules" && dirName != "vendor" && dirName != "tmp" {
+						if err := watcher.Add(event.Name); err == nil {
+							if devVerbose {
+								fmt.Printf("  [%s] %s Added new directory to watcher: %s\n", time.Now().Format("15:04:05"), cyan("ℹ"), event.Name)
+							}
+						}
+					}
+					continue
+				}
+			}
+
 			// Check file extension
 			ext := filepath.Ext(event.Name)
-			if ext != ".go" && ext != ".templ" {
+			if ext != ".go" && ext != ".templ" && ext != ".css" {
 				continue
 			}
 
@@ -351,23 +385,34 @@ func runDev(cmd *cobra.Command, args []string) {
 				continue
 			}
 
+			if devVerbose {
+				fmt.Printf("  [%s] %s File changed: %s\n", time.Now().Format("15:04:05"), cyan("ℹ"), event.Name)
+			}
+
 			// Debounce
 			if debounceTimer != nil {
 				debounceTimer.Stop()
 			}
 
+			// Capture ext for the closure
+			fileExt := ext
+			fileName := event.Name
+
 			debounceTimer = time.AfterFunc(debounceDuration, func() {
 				timestamp := time.Now().Format("15:04:05")
 
-				// Regenerate routes if a route/middleware/proxy/page/layout file changed
-				needsRouteRegen := strings.Contains(event.Name, "route.go") ||
-					strings.Contains(event.Name, "middleware.go") ||
-					strings.Contains(event.Name, "proxy.go") ||
-					strings.HasSuffix(event.Name, "page.templ") ||
-					strings.HasSuffix(event.Name, "layout.templ")
+				// Regenerate routes if a route/middleware/proxy/page/layout/loader file changed
+				needsRouteRegen := strings.Contains(fileName, "route.go") ||
+					strings.Contains(fileName, "middleware.go") ||
+					strings.Contains(fileName, "proxy.go") ||
+					strings.Contains(fileName, "loader.go") ||
+					strings.HasSuffix(fileName, "page.templ") ||
+					strings.HasSuffix(fileName, "layout.templ")
 
 				if needsRouteRegen {
-					fmt.Printf("  [%s] %s Regenerating routes...\n", timestamp, yellow("→"))
+					if devVerbose {
+						fmt.Printf("  [%s] %s Regenerating routes...\n", timestamp, yellow("→"))
+					}
 					if _, err := generator.ScanAndGenerateRoutes("app", "fuego_routes.go"); err != nil {
 						fmt.Printf("  [%s] %s route generation failed: %v\n", timestamp, red("✗"), err)
 						return
@@ -375,8 +420,10 @@ func runDev(cmd *cobra.Command, args []string) {
 				}
 
 				// Run templ generate if it's a templ file
-				if ext == ".templ" {
-					fmt.Printf("  [%s] %s Regenerating templates...\n", timestamp, yellow("→"))
+				if fileExt == ".templ" {
+					if devVerbose {
+						fmt.Printf("  [%s] %s Regenerating templates...\n", timestamp, yellow("→"))
+					}
 					templCmd := exec.Command("templ", "generate")
 					if err := templCmd.Run(); err != nil {
 						fmt.Printf("  [%s] %s templ generate failed: %v\n", timestamp, red("✗"), err)
@@ -384,12 +431,46 @@ func runDev(cmd *cobra.Command, args []string) {
 					}
 				}
 
+				// Rebuild Tailwind CSS if templ or css file changed
+				// This ensures new CSS classes used in templ files are included
+				if (fileExt == ".templ" || fileExt == ".css") && tools.HasStyles() {
+					if devVerbose {
+						fmt.Printf("  [%s] %s Rebuilding CSS...\n", timestamp, yellow("→"))
+					}
+					tw := tools.NewTailwindCLI()
+					if err := tw.Build(tools.DefaultInputPath(), tools.DefaultOutputPath()); err != nil {
+						fmt.Printf("  [%s] %s CSS rebuild failed: %v\n", timestamp, yellow("⚠"), err)
+					}
+				}
+
 				fmt.Printf("  [%s] %s Rebuilding...\n", timestamp, yellow("→"))
 
-				// Stop old server
+				// Stop old server with graceful shutdown
 				if serverProcess != nil && serverProcess.Process != nil {
 					_ = serverProcess.Process.Signal(syscall.SIGTERM)
-					_ = serverProcess.Wait()
+
+					// Wait for process to exit with timeout
+					done := make(chan error, 1)
+					go func() {
+						done <- serverProcess.Wait()
+					}()
+
+					select {
+					case <-done:
+						// Process exited gracefully
+						if devVerbose {
+							fmt.Printf("  [%s] %s Server stopped gracefully\n", timestamp, cyan("ℹ"))
+						}
+					case <-time.After(5 * time.Second):
+						// Force kill if not responding
+						if devVerbose {
+							fmt.Printf("  [%s] %s Server didn't stop gracefully, force killing\n", timestamp, yellow("⚠"))
+						}
+						_ = serverProcess.Process.Kill()
+					}
+
+					// Small delay to ensure port is released
+					time.Sleep(100 * time.Millisecond)
 				}
 
 				// Start new server
@@ -411,7 +492,16 @@ func runDev(cmd *cobra.Command, args []string) {
 			}
 			if serverProcess != nil && serverProcess.Process != nil {
 				_ = serverProcess.Process.Signal(syscall.SIGTERM)
-				_ = serverProcess.Wait()
+				// Wait with timeout for graceful shutdown
+				done := make(chan error, 1)
+				go func() {
+					done <- serverProcess.Wait()
+				}()
+				select {
+				case <-done:
+				case <-time.After(5 * time.Second):
+					_ = serverProcess.Process.Kill()
+				}
 			}
 			os.Exit(0)
 		}
@@ -419,10 +509,22 @@ func runDev(cmd *cobra.Command, args []string) {
 }
 
 func startDevServer(port string) *exec.Cmd {
+	// Check if port is available, find alternative if not
+	actualPort := port
+	if !isPortAvailable(port) {
+		if devVerbose {
+			fmt.Printf("  %s Port %s is busy, finding alternative...\n", color.YellowString("⚠"), port)
+		}
+		actualPort = findAvailablePort(port)
+		if actualPort != port {
+			fmt.Printf("  %s Using port %s (requested %s was busy)\n", color.YellowString("⚠"), actualPort, port)
+		}
+	}
+
 	cmd := exec.Command("go", "run", ".")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%s", port))
+	cmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%s", actualPort))
 
 	if err := cmd.Start(); err != nil {
 		fmt.Printf("  %s Failed to start server: %v\n", color.RedString("Error:"), err)
@@ -430,4 +532,33 @@ func startDevServer(port string) *exec.Cmd {
 	}
 
 	return cmd
+}
+
+// isPortAvailable checks if a port is available for binding
+func isPortAvailable(port string) bool {
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		return false
+	}
+	_ = ln.Close()
+	return true
+}
+
+// findAvailablePort finds an available port starting from the given port
+func findAvailablePort(startPort string) string {
+	port, err := strconv.Atoi(startPort)
+	if err != nil {
+		return startPort
+	}
+
+	// Try up to 100 ports
+	for i := 0; i < 100; i++ {
+		testPort := strconv.Itoa(port + i)
+		if isPortAvailable(testPort) {
+			return testPort
+		}
+	}
+
+	// Fall back to original port
+	return startPort
 }

@@ -412,6 +412,38 @@ func Proxy(c *fuego.Context) (*fuego.ProxyResult, error) {
 `,
 }
 
+// Loader template
+var loaderTemplate = `package {{.Package}}
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+// {{.DataType}} holds the data for this page.
+// Add your data fields here.
+type {{.DataType}} struct {
+	// TODO: Add your data fields
+	// Example:
+	// UserName string
+	// Items    []Item
+}
+
+// Loader loads data for the page.
+// This function is automatically called before rendering the page.
+func Loader(c *fuego.Context) ({{.DataType}}, error) {
+	// TODO: Load your data here
+	// Example:
+	// - Fetch from database
+	// - Call external API
+	// - Read from cache
+	//
+	// Return an error to stop page rendering:
+	// if notFound {
+	//     return {{.DataType}}{}, fuego.NotFound("Resource not found")
+	// }
+
+	return {{.DataType}}{}, nil
+}
+`
+
 // Page templates
 var pageTemplate = `package {{.Package}}
 
@@ -499,7 +531,17 @@ func RegisterRoutes(app *fuego.App) {
 	app.RegisterRoute("{{.Method}}", "{{.Pattern}}", {{.ImportAlias}}.{{.Handler}})
 {{- end}}
 {{- range .Pages}}
-{{- if .HasParams}}
+{{- if .HasLoader}}
+	// Page: {{.Pattern}} (from {{.FilePath}})
+	// Data loaded by: {{.LoaderPackage}}.Loader()
+	app.Get("{{.Pattern}}", func(c *fuego.Context) error {
+		data, err := {{.ImportAlias}}.Loader(c)
+		if err != nil {
+			return err
+		}
+		return fuego.TemplComponent(c, 200, {{.ImportAlias}}.Page(data))
+	})
+{{- else if .HasParams}}
 	// Page: {{.Pattern}} (from {{.FilePath}})
 	// Dynamic page with signature: {{.ParamSignature}}
 	app.Get("{{.Pattern}}", func(c *fuego.Context) error {

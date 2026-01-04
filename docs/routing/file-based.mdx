@@ -380,6 +380,99 @@ Routes created:
 | GET | `/api/posts/*` | `app/api/posts/[...slug]/route.go` |
 | GET,PUT | `/api/settings` | `app/api/(admin)/settings/route.go` |
 
+## File Precedence Rules
+
+When multiple files exist in the same directory, Fuego follows these precedence rules:
+
+### page.templ + route.go
+
+If both `page.templ` and `route.go` exist in the same directory:
+
+1. **If route.go has a `Get()` function**: `page.templ` takes precedence for GET requests. The `Get()` handler in route.go is ignored, and a warning is shown.
+2. **If route.go has NO `Get()` function**: Both work together - `page.templ` handles GET, `route.go` handles POST, PUT, DELETE, etc.
+
+<Warning>
+When route.go's Get() handler conflicts with page.templ, a warning is shown during build/dev. The recommended patterns are:
+- Move API logic to `app/api/` directory
+- Use the data loader pattern (see below)
+- Remove Get() from route.go if page.templ should handle GET
+</Warning>
+
+### Data Loaders
+
+The cleanest pattern for pages that need server-side data is the **loader pattern**:
+
+<FileTree>
+  <Folder name="app" defaultOpen>
+    <Folder name="dashboard" defaultOpen>
+      <File name="loader.go" />
+      <File name="page.templ" />
+    </Folder>
+  </Folder>
+</FileTree>
+
+**loader.go** - Loads data:
+```go
+package dashboard
+
+import "github.com/abdul-hamid-achik/fuego/pkg/fuego"
+
+type DashboardData struct {
+    UserName string
+    Stats    Stats
+}
+
+func Loader(c *fuego.Context) (DashboardData, error) {
+    // Fetch from database, API, etc.
+    return DashboardData{
+        UserName: "Alice",
+        Stats:    getStats(c),
+    }, nil
+}
+```
+
+**page.templ** - Renders UI:
+```go
+package dashboard
+
+templ Page(data DashboardData) {
+    <h1>Welcome, { data.UserName }</h1>
+}
+```
+
+Fuego automatically wires them together:
+```go
+// Generated code:
+app.Get("/dashboard", func(c *fuego.Context) error {
+    data, err := dashboard.Loader(c)
+    if err != nil {
+        return err
+    }
+    return fuego.TemplComponent(c, 200, dashboard.Page(data))
+})
+```
+
+Generate a loader with:
+```bash
+fuego generate loader dashboard
+fuego generate loader users/_id --data-type UserDetailData
+```
+
+### Alternative: HTMX Pattern
+
+For client-side data loading, use HTMX:
+
+```go
+// page.templ - no data parameter
+templ Page() {
+    <div hx-get="/api/dashboard" hx-trigger="load">
+        Loading...
+    </div>
+}
+```
+
+See the [HTMX Integration](/docs/frontend/htmx) guide for more details.
+
 ## Next Steps
 
 <CardGroup cols={2}>

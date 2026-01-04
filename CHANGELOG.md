@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.3] - 2025-01-03
+
+### Fixed
+
+- **Dev Mode Hot Reload**
+  - Increased debounce from 100ms to 300ms for more reliable rebuilds during rapid saves
+  - Added dynamic directory watching - new directories created during dev are automatically watched
+  - Improved server restart with 5-second graceful shutdown timeout and forced kill fallback
+  - Added smart port detection - finds alternative port if requested port is busy
+  - CSS now rebuilds when `.templ` or `.css` files change
+
+- **Tailwind CSS Watch Mode**
+  - Fixed `@source` directive not working by adding `--cwd` flag to Tailwind CLI
+  - Watch mode now runs initial build before starting watcher, ensuring CSS is always up-to-date
+  - CSS output is guaranteed fresh when dev server starts
+
+- **Route Conflicts**
+  - Fixed duplicate route registration when both `page.templ` and `route.go` exist in same directory
+  - `page.templ` now takes precedence for GET requests; `route.go` Get() handlers show warning
+  - Added conflict detection with helpful warning messages and suggested alternatives
+  - Removed conflicting GET handlers automatically to prevent runtime errors
+
+### Added
+
+- **Data Loader Pattern**
+  - New `loader.go` file type for separating data fetching from page rendering
+  - Generator automatically wires `Loader()` function to `Page()` component
+  - New command: `fuego generate loader <path>` with `--data-type` flag
+  - Pages with loaders are auto-wired: `Loader(c) -> Page(data)`
+  - Documentation added to routing guide
+
+- **Dev Mode Verbose Flag**
+  - Added `--verbose` / `-v` flag to `fuego dev` for detailed debugging info
+  - Shows file change events, watched directories, and rebuild steps
+  - Helpful for diagnosing hot reload issues
+
+- **Improved Generator Warnings**
+  - Pages with complex data types but no loader now show helpful warnings
+  - Conflict warnings explain resolution and suggest alternatives
+  - Links to documentation for recommended patterns
+
+### Changed
+
+- **Generator Schema**
+  - Added `HasLoader`, `LoaderImportPath`, `LoaderPackage` fields to PageRegistration
+  - Added `LoaderRegistration` type for loader metadata
+  - Updated route template to handle loader pattern
+  - Added loader template for `fuego generate loader` command
+
 ## [0.11.2] - 2025-01-03
 
 ### Fixed

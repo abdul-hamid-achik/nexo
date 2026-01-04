@@ -90,7 +90,14 @@ func (t *TailwindCLI) Build(input, output string) error {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	cmd := exec.Command(t.BinaryPath(), "-i", input, "-o", output, "--minify")
+	// Get current working directory for --cwd flag
+	// This ensures @source directives in input.css resolve correctly
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+
+	cmd := exec.Command(t.BinaryPath(), "-i", input, "-o", output, "--minify", "--cwd", cwd)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -109,12 +116,19 @@ func (t *TailwindCLI) BuildWithOutput(input, output string) (string, error) {
 		return "", fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	cmd := exec.Command(t.BinaryPath(), "-i", input, "-o", output, "--minify")
+	// Get current working directory for --cwd flag
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+
+	cmd := exec.Command(t.BinaryPath(), "-i", input, "-o", output, "--minify", "--cwd", cwd)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
-// Watch runs Tailwind in watch mode and returns the process
+// Watch runs Tailwind in watch mode and returns the process.
+// It first runs an initial build to ensure CSS is up-to-date, then starts watching.
 func (t *TailwindCLI) Watch(input, output string) (*exec.Cmd, error) {
 	if err := t.EnsureInstalled(); err != nil {
 		return nil, err
@@ -126,7 +140,24 @@ func (t *TailwindCLI) Watch(input, output string) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	cmd := exec.Command(t.BinaryPath(), "-i", input, "-o", output, "--watch")
+	// Get current working directory for --cwd flag
+	// This ensures @source directives in input.css resolve correctly
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+
+	// Run initial build first to ensure CSS is up-to-date before starting watch
+	// This fixes the issue where the watcher doesn't produce output until a file changes
+	buildCmd := exec.Command(t.BinaryPath(), "-i", input, "-o", output, "--cwd", cwd)
+	buildCmd.Stdout = os.Stdout
+	buildCmd.Stderr = os.Stderr
+	if err := buildCmd.Run(); err != nil {
+		return nil, fmt.Errorf("initial CSS build failed: %w", err)
+	}
+
+	// Now start watch mode
+	cmd := exec.Command(t.BinaryPath(), "-i", input, "-o", output, "--watch", "--cwd", cwd)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

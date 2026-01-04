@@ -1177,3 +1177,241 @@ func Post(c *fuego.Context) error {
 		t.Error("Found unused layout import in generated file")
 	}
 }
+
+func TestGenerateLoader(t *testing.T) {
+	tests := []struct {
+		name         string
+		path         string
+		dataType     string
+		wantFile     string
+		wantDataType string
+	}{
+		{
+			name:         "simple loader",
+			path:         "dashboard",
+			dataType:     "",
+			wantFile:     "dashboard/loader.go",
+			wantDataType: "DashboardData",
+		},
+		{
+			name:         "loader with custom data type",
+			path:         "users",
+			dataType:     "UserListData",
+			wantFile:     "users/loader.go",
+			wantDataType: "UserListData",
+		},
+		{
+			name:         "nested loader",
+			path:         "admin/settings",
+			dataType:     "",
+			wantFile:     "admin/settings/loader.go",
+			wantDataType: "SettingsData",
+		},
+		{
+			name:         "dynamic loader",
+			path:         "users/_id",
+			dataType:     "UserDetailData",
+			wantFile:     "users/_id/loader.go",
+			wantDataType: "UserDetailData",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			appDir := filepath.Join(tmpDir, "app")
+
+			result, err := GenerateLoader(LoaderConfig{
+				Path:     tt.path,
+				DataType: tt.dataType,
+				AppDir:   appDir,
+			})
+
+			if err != nil {
+				t.Fatalf("GenerateLoader() error = %v", err)
+			}
+
+			if len(result.Files) == 0 {
+				t.Fatal("Expected at least one file")
+			}
+
+			// Check file exists
+			expectedPath := filepath.Join(appDir, tt.wantFile)
+			if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+				t.Errorf("Expected file %s to exist", expectedPath)
+			}
+
+			// Check file contents
+			content, err := os.ReadFile(expectedPath)
+			if err != nil {
+				t.Fatalf("Failed to read file: %v", err)
+			}
+
+			contentStr := string(content)
+
+			// Check data type is present
+			if !strings.Contains(contentStr, "type "+tt.wantDataType+" struct") {
+				t.Errorf("Expected data type %s, but not found in content", tt.wantDataType)
+			}
+
+			// Check Loader function is present
+			if !strings.Contains(contentStr, "func Loader(c *fuego.Context)") {
+				t.Error("Expected Loader function, but not found")
+			}
+
+			// Check return type
+			if !strings.Contains(contentStr, "("+tt.wantDataType+", error)") {
+				t.Errorf("Expected return type (%s, error), but not found", tt.wantDataType)
+			}
+		})
+	}
+}
+
+func TestRouteFileHasGetHandler(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected bool
+	}{
+		{
+			name:     "has Get handler",
+			content:  "package test\n\nfunc Get(c *fuego.Context) error { return nil }",
+			expected: true,
+		},
+		{
+			name:     "has Get with newlines",
+			content:  "package test\n\nfunc Get(\n\tc *fuego.Context,\n) error { return nil }",
+			expected: true,
+		},
+		{
+			name:     "only Post handler",
+			content:  "package test\n\nfunc Post(c *fuego.Context) error { return nil }",
+			expected: false,
+		},
+		{
+			name:     "no handlers",
+			content:  "package test\n\nvar x = 1",
+			expected: false,
+		},
+		{
+			name:     "GetSomething is not Get",
+			content:  "package test\n\nfunc GetUser(c *fuego.Context) error { return nil }",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			filePath := filepath.Join(tmpDir, "route.go")
+
+			if err := os.WriteFile(filePath, []byte(tt.content), 0644); err != nil {
+				t.Fatalf("Failed to write test file: %v", err)
+			}
+
+			result, err := routeFileHasGetHandler(filePath)
+			if err != nil {
+				t.Fatalf("routeFileHasGetHandler() error = %v", err)
+			}
+
+			if result != tt.expected {
+				t.Errorf("routeFileHasGetHandler() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestHasComplexParams(t *testing.T) {
+	tests := []struct {
+		name     string
+		params   []PageParam
+		expected bool
+	}{
+		{
+			name:     "no params",
+			params:   []PageParam{},
+			expected: false,
+		},
+		{
+			name: "only string params",
+			params: []PageParam{
+				{Name: "slug", Type: "string"},
+				{Name: "id", Type: "string"},
+			},
+			expected: false,
+		},
+		{
+			name: "has complex param",
+			params: []PageParam{
+				{Name: "data", Type: "DashboardData"},
+			},
+			expected: true,
+		},
+		{
+			name: "mixed params",
+			params: []PageParam{
+				{Name: "id", Type: "string"},
+				{Name: "data", Type: "UserData"},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := hasComplexParams(tt.params)
+			if result != tt.expected {
+				t.Errorf("hasComplexParams() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestRemoveGetHandlerForPattern(t *testing.T) {
+	routes := []RouteRegistration{
+		{Method: "GET", Pattern: "/dashboard"},
+		{Method: "POST", Pattern: "/dashboard"},
+		{Method: "GET", Pattern: "/users"},
+		{Method: "DELETE", Pattern: "/dashboard"},
+	}
+
+	result := removeGetHandlerForPattern(routes, "/dashboard")
+
+	if len(result) != 3 {
+		t.Errorf("Expected 3 routes, got %d", len(result))
+	}
+
+	// Check GET /dashboard is removed
+	for _, r := range result {
+		if r.Method == "GET" && r.Pattern == "/dashboard" {
+			t.Error("GET /dashboard should have been removed")
+		}
+	}
+
+	// Check other routes are preserved
+	hasPostDashboard := false
+	hasGetUsers := false
+	hasDeleteDashboard := false
+
+	for _, r := range result {
+		if r.Method == "POST" && r.Pattern == "/dashboard" {
+			hasPostDashboard = true
+		}
+		if r.Method == "GET" && r.Pattern == "/users" {
+			hasGetUsers = true
+		}
+		if r.Method == "DELETE" && r.Pattern == "/dashboard" {
+			hasDeleteDashboard = true
+		}
+	}
+
+	if !hasPostDashboard {
+		t.Error("POST /dashboard should be preserved")
+	}
+	if !hasGetUsers {
+		t.Error("GET /users should be preserved")
+	}
+	if !hasDeleteDashboard {
+		t.Error("DELETE /dashboard should be preserved")
+	}
+}

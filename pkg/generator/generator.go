@@ -323,6 +323,76 @@ func GeneratePage(cfg PageConfig) (*Result, error) {
 	}, nil
 }
 
+// LoaderConfig holds configuration for generating a loader.
+type LoaderConfig struct {
+	Path     string // Path relative to app directory (e.g., "dashboard", "users/_id")
+	DataType string // Name of the data type (e.g., "DashboardData")
+	AppDir   string // App directory (default: "app")
+}
+
+// GenerateLoader generates a loader.go file.
+func GenerateLoader(cfg LoaderConfig) (*Result, error) {
+	if cfg.AppDir == "" {
+		cfg.AppDir = "app"
+	}
+
+	// Determine directory path
+	var dirPath string
+	if cfg.Path != "" {
+		dirPath = filepath.Join(cfg.AppDir, cfg.Path)
+	} else {
+		dirPath = cfg.AppDir
+	}
+	loaderFilePath := filepath.Join(dirPath, "loader.go")
+
+	// Create directory
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(loaderFilePath); err == nil {
+		return nil, fmt.Errorf("file already exists: %s", loaderFilePath)
+	}
+
+	// Generate package name
+	pkgName := packageNameFromPath(cfg.Path)
+	if pkgName == "" {
+		pkgName = "app"
+	}
+
+	// Generate data type name
+	dataType := cfg.DataType
+	if dataType == "" {
+		// Derive from directory name
+		baseName := filepath.Base(cfg.Path)
+		if baseName == "" || baseName == "." {
+			baseName = "Page"
+		}
+		// Convert to PascalCase and add Data suffix
+		dataType = toTitle(strings.ReplaceAll(baseName, "-", " "))
+		dataType = strings.ReplaceAll(dataType, " ", "") + "Data"
+	}
+
+	// Generate loader
+	data := struct {
+		Package  string
+		DataType string
+	}{
+		Package:  pkgName,
+		DataType: dataType,
+	}
+
+	if err := executeTemplate(loaderFilePath, loaderTemplate, data); err != nil {
+		return nil, err
+	}
+
+	return &Result{
+		Files:   []string{loaderFilePath},
+		Pattern: "/" + cfg.Path,
+	}, nil
+}
+
 // Helper functions
 
 func packageNameFromPath(path string) string {
@@ -614,6 +684,11 @@ type PageRegistration struct {
 	URLParams      []string    // Parameter names extracted from URL path (e.g., _slug -> "slug")
 	HasParams      bool        // True if Page() accepts parameters
 	ParamSignature string      // Original signature from templ file (for comments)
+
+	// Data loader support
+	HasLoader        bool   // True if a loader.go exists in the same directory
+	LoaderImportPath string // Import path for the loader
+	LoaderPackage    string // Package name for the loader
 }
 
 // LayoutRegistration holds information for layout registration.
@@ -635,6 +710,7 @@ type RoutesGenConfig struct {
 	Proxy       *ProxyRegistration       // Discovered proxy (optional)
 	Pages       []PageRegistration       // Discovered pages
 	Layouts     []LayoutRegistration     // Discovered layouts
+	Loaders     []LoaderRegistration     // Discovered data loaders
 }
 
 // GenerateRoutesFile generates the fuego_routes.go file that registers all routes.
@@ -772,6 +848,25 @@ type GenerationWarning struct {
 	Message string
 }
 
+// LoaderRegistration holds information for a data loader.
+type LoaderRegistration struct {
+	ImportPath  string // Full import path
+	ImportAlias string // Alias for the import
+	Package     string // Package name
+	FilePath    string // Source file path (loader.go)
+	ReturnType  string // Return type of the Loader function
+	Dir         string // Directory containing the loader
+}
+
+// RouteConflict represents a conflict between page.templ and route.go
+type RouteConflict struct {
+	Directory   string
+	PageFile    string
+	RouteFile   string
+	Pattern     string
+	HasRouteGet bool // True if route.go has a Get() handler
+}
+
 // ScanAndGenerateRoutes scans the app directory and generates the routes file.
 func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 	// Get the module name from go.mod
@@ -801,8 +896,52 @@ func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 	fset := token.NewFileSet()
 
 	var warnings []GenerationWarning
+	var conflicts []RouteConflict
 
-	// Scan for routes, middleware, pages, and layouts
+	// Track which directories have route.go with Get() handlers
+	routeGetHandlers := make(map[string]bool) // dir -> hasGetHandler
+	// Track which directories have loaders
+	loaderDirs := make(map[string]*LoaderRegistration)
+
+	// First pass: scan route.go and loader.go files to detect conflicts
+	err = filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		dir := filepath.Dir(path)
+
+		switch info.Name() {
+		case "route.go":
+			// Check if this route.go has a Get() handler
+			hasGet, err := routeFileHasGetHandler(path)
+			if err != nil {
+				return nil // Continue scanning even if we can't parse this file
+			}
+			routeGetHandlers[dir] = hasGet
+
+		case "loader.go":
+			// Scan for Loader() function
+			loader, err := scanLoaderFile(fset, path, appDir, moduleName)
+			if err != nil {
+				return nil // Continue scanning
+			}
+			if loader != nil {
+				loaderDirs[dir] = loader
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan for conflicts: %w", err)
+	}
+
+	// Second pass: scan all files and handle conflicts
 	err = filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -852,17 +991,68 @@ func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 				cfg.Proxy = proxy
 			}
 
+		case "loader.go":
+			// Already scanned in first pass, add to config
+			dir := filepath.Dir(path)
+			if loader, ok := loaderDirs[dir]; ok {
+				cfg.Loaders = append(cfg.Loaders, *loader)
+			}
+
 		case "page.templ":
+			dir := filepath.Dir(path)
 			page, err := scanPageFile(path, appDir, moduleName)
 			if err != nil {
 				return err
 			}
-			if page != nil {
-				// Check for parameter mismatches and add warnings
-				pageWarnings := validatePageParams(page)
-				warnings = append(warnings, pageWarnings...)
-				cfg.Pages = append(cfg.Pages, *page)
+			if page == nil {
+				return nil
 			}
+
+			// Check for conflict with route.go
+			routeGoPath := filepath.Join(dir, "route.go")
+			if hasGetHandler, hasRouteGo := routeGetHandlers[dir]; hasRouteGo {
+				if hasGetHandler {
+					// Conflict: route.go has Get() handler, page.templ would also register GET
+					// page.templ takes precedence, but warn about the conflict
+					conflicts = append(conflicts, RouteConflict{
+						Directory:   dir,
+						PageFile:    path,
+						RouteFile:   routeGoPath,
+						Pattern:     page.Pattern,
+						HasRouteGet: true,
+					})
+
+					// Remove the Get handler from routes since page.templ takes precedence
+					cfg.Routes = removeGetHandlerForPattern(cfg.Routes, page.Pattern)
+				}
+				// If route.go doesn't have Get(), no conflict - page handles GET, route handles other methods
+			}
+
+			// Check if this page has a loader
+			if loader, hasLoader := loaderDirs[dir]; hasLoader {
+				// Page has a loader - mark it
+				page.HasLoader = true
+				page.LoaderImportPath = loader.ImportPath
+				page.LoaderPackage = loader.Package
+			}
+
+			// Check for parameter mismatches and add warnings
+			pageWarnings := validatePageParams(page)
+			warnings = append(warnings, pageWarnings...)
+
+			// Check if page has complex params without a loader or route.go Get handler
+			if page.HasParams && !page.HasLoader && !routeGetHandlers[dir] {
+				if hasComplexParams(page.Params) {
+					warnings = append(warnings, GenerationWarning{
+						File:    path,
+						Message: fmt.Sprintf("Page has complex parameters %s but no loader.go or route.go Get() handler. Consider adding a loader.go file.", page.ParamSignature),
+					})
+					// Skip this page - it can't be auto-wired
+					return nil
+				}
+			}
+
+			cfg.Pages = append(cfg.Pages, *page)
 
 		case "layout.templ":
 			layout, err := scanLayoutFile(path, appDir, moduleName)
@@ -881,12 +1071,105 @@ func ScanAndGenerateRoutes(appDir, outputPath string) (*Result, error) {
 		return nil, fmt.Errorf("failed to scan app directory: %w", err)
 	}
 
-	// Print warnings
+	// Print conflict warnings
+	for _, c := range conflicts {
+		printConflictWarning(c)
+	}
+
+	// Print other warnings
 	for _, w := range warnings {
 		fmt.Printf("Warning: %s: %s\n", w.File, w.Message)
 	}
 
 	return GenerateRoutesFile(cfg)
+}
+
+// routeFileHasGetHandler checks if a route.go file has a Get() handler function
+func routeFileHasGetHandler(filePath string) (bool, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return false, err
+	}
+
+	// Simple regex check for func Get(
+	// This is faster than parsing the full AST
+	getHandlerRe := regexp.MustCompile(`func\s+Get\s*\(`)
+	return getHandlerRe.Match(content), nil
+}
+
+// scanLoaderFile scans a loader.go file for a Loader() function
+func scanLoaderFile(fset *token.FileSet, filePath, appDir, moduleName string) (*LoaderRegistration, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for Loader function
+	loaderRe := regexp.MustCompile(`func\s+Loader\s*\([^)]*\*fuego\.Context\s*\)\s*\(([^,]+),\s*error\)`)
+	matches := loaderRe.FindSubmatch(content)
+	if len(matches) < 2 {
+		return nil, nil // No Loader function found
+	}
+
+	returnType := strings.TrimSpace(string(matches[1]))
+
+	dir := filepath.Dir(filePath)
+	relDir, err := filepath.Rel(".", dir)
+	if err != nil {
+		return nil, err
+	}
+
+	importPath := getImportPath(moduleName, relDir)
+	pkgName := packageNameFromDir(dir)
+
+	return &LoaderRegistration{
+		ImportPath: importPath,
+		Package:    pkgName,
+		FilePath:   filePath,
+		ReturnType: returnType,
+		Dir:        dir,
+	}, nil
+}
+
+// removeGetHandlerForPattern removes GET handlers for a specific pattern from the routes slice
+func removeGetHandlerForPattern(routes []RouteRegistration, pattern string) []RouteRegistration {
+	result := make([]RouteRegistration, 0, len(routes))
+	for _, r := range routes {
+		// Keep the route if it's not a GET handler for this pattern
+		if r.Method != "GET" || r.Pattern != pattern {
+			result = append(result, r)
+		}
+	}
+	return result
+}
+
+// hasComplexParams checks if page params include non-string types (complex types)
+func hasComplexParams(params []PageParam) bool {
+	for _, p := range params {
+		// Simple types that can be auto-extracted from URL
+		if p.Type == "string" {
+			continue
+		}
+		// Any other type is "complex" and needs a loader
+		return true
+	}
+	return false
+}
+
+// printConflictWarning prints a detailed warning about route conflicts
+func printConflictWarning(c RouteConflict) {
+	fmt.Printf("\n⚠ Warning: Route conflict in %s\n", c.Directory)
+	fmt.Printf("  Both route.go and page.templ exist for pattern: %s\n", c.Pattern)
+	fmt.Println()
+	fmt.Println("  Resolution: page.templ takes precedence for GET requests.")
+	fmt.Printf("  The Get() handler in route.go will be ignored.\n")
+	fmt.Println()
+	fmt.Println("  Alternatives:")
+	fmt.Println("  1. Remove Get() from route.go (it will still handle POST, PUT, DELETE, etc.)")
+	fmt.Println("  2. Move API logic to app/api/ directory")
+	fmt.Println("  3. Use the data loader pattern: create loader.go with Loader() function")
+	fmt.Println("     See: https://fuego.build/docs/routing/data-loaders")
+	fmt.Println()
 }
 
 // templPageSignatureRe matches templ Page() or templ Page(params...)
