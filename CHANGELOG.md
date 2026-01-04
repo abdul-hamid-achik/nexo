@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.6] - 2025-01-04
+
+### Added
+
+- **Deploy Command Improvements**
+  - Auto-loads `.env` file if present in project root
+  - New `--env-file` flag to specify custom env file path
+  - New `--no-env-file` flag to skip auto-loading .env
+  - Command-line `--env` flags override values from .env file
+  - Dynamic Dockerfile generation includes `static/`, `styles/`, `templates/` directories
+  - Added `tzdata` package to Docker image for timezone support
+
 ## [0.11.5] - 2025-01-04
 
 ### Fixed
