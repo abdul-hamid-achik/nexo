@@ -1269,6 +1269,162 @@ func TestGenerateLoader(t *testing.T) {
 	}
 }
 
+func TestIsGeneratorPrivateFolder(t *testing.T) {
+	tests := []struct {
+		name     string
+		folder   string
+		expected bool
+	}{
+		// Private folders should return true
+		{"_components is private", "_components", true},
+		{"_lib is private", "_lib", true},
+		{"_utils is private", "_utils", true},
+		{"_helpers is private", "_helpers", true},
+		{"_private is private", "_private", true},
+		{"_shared is private", "_shared", true},
+
+		// Dynamic route folders should NOT be private
+		{"_id is NOT private (dynamic)", "_id", false},
+		{"_slug is NOT private (dynamic)", "_slug", false},
+		{"_userId is NOT private (dynamic)", "_userId", false},
+
+		// Catch-all should NOT be private
+		{"__slug is NOT private (catch-all)", "__slug", false},
+		{"__path is NOT private (catch-all)", "__path", false},
+
+		// Optional catch-all should NOT be private
+		{"___cat is NOT private (optional catch-all)", "___cat", false},
+
+		// Route groups should NOT be private
+		{"_group_admin is NOT private (route group)", "_group_admin", false},
+		{"_auth_ is NOT private (route group)", "_auth_", false},
+		{"_dashboard_ is NOT private (route group)", "_dashboard_", false},
+
+		// Regular folders should NOT be private
+		{"users is NOT private", "users", false},
+		{"api is NOT private", "api", false},
+		{"admin is NOT private", "admin", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isGeneratorPrivateFolder(tt.folder, "")
+			if result != tt.expected {
+				t.Errorf("isGeneratorPrivateFolder(%q) = %v, want %v", tt.folder, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCleanPackageName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"users", "users"},
+		{"user-profile", "userprofile"},
+		{"user_profile", "user_profile"},
+		{"123users", "pkg123users"},
+		// These are valid Go package names, so cleanPackageName keeps them as-is
+		// The package name extraction happens in packageNameFromPath
+		{"_id", "_id"},
+		{"__slug", "__slug"},
+		{"___cat", "___cat"},
+		{"_group_admin", "_group_admin"},
+		{"_auth_", "_auth_"},
+		{"api-v1", "apiv1"},
+		{"API", "api"},
+		{"", "route"}, // empty defaults to "route" not "pkg"
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := cleanPackageName(tt.input)
+			if result != tt.expected {
+				t.Errorf("cleanPackageName(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestToTitle(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"get", "Get"},
+		{"GET", "Get"},
+		{"post", "Post"},
+		{"POST", "Post"},
+		{"delete", "Delete"},
+		{"DELETE", "Delete"},
+		{"patch", "Patch"},
+		{"PATCH", "Patch"},
+		{"put", "Put"},
+		{"PUT", "Put"},
+		{"options", "Options"},
+		{"head", "Head"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := toTitle(tt.input)
+			if result != tt.expected {
+				t.Errorf("toTitle(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestToTitleCase(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"GET", "Get"},
+		{"POST", "Post"},
+		{"DELETE", "Delete"},
+		{"PUT", "Put"},
+		{"PATCH", "Patch"},
+		{"OPTIONS", "Options"},
+		{"HEAD", "Head"},
+		{"get", "Get"},
+		{"post", "Post"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := toTitleCase(tt.input)
+			if result != tt.expected {
+				t.Errorf("toTitleCase(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetImportPath(t *testing.T) {
+	tests := []struct {
+		module   string
+		relDir   string
+		expected string
+	}{
+		{"myapp", "app/api/users", "myapp/app/api/users"},
+		{"github.com/user/project", "app/api", "github.com/user/project/app/api"},
+		{"myapp", "app/api/users/_id", "myapp/app/api/users/_id"},
+		{"myapp", "app/_group_admin/settings", "myapp/app/_group_admin/settings"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.relDir, func(t *testing.T) {
+			result := getImportPath(tt.module, tt.relDir)
+			if result != tt.expected {
+				t.Errorf("getImportPath(%q, %q) = %q, want %q", tt.module, tt.relDir, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestRouteFileHasGetHandler(t *testing.T) {
 	tests := []struct {
 		name     string
