@@ -727,7 +727,18 @@ func TestVerifyChecksum_WithMockServer(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	archivePath := filepath.Join(tmpDir, "fuego_0.5.0_darwin_arm64.tar.gz")
+	// Determine the expected asset name for the current platform
+	goos := runtime.GOOS
+	goarch := runtime.GOARCH
+	var extension string
+	if goos == "windows" {
+		extension = ".zip"
+	} else {
+		extension = ".tar.gz"
+	}
+	assetName := fmt.Sprintf("fuego_0.5.0_%s_%s%s", goos, goarch, extension)
+
+	archivePath := filepath.Join(tmpDir, assetName)
 	content := []byte("test archive content")
 	if err := os.WriteFile(archivePath, content, 0644); err != nil {
 		t.Fatalf("Failed to write test archive: %v", err)
@@ -736,8 +747,8 @@ func TestVerifyChecksum_WithMockServer(t *testing.T) {
 	// Calculate expected hash
 	expectedHash, _ := calculateSHA256(archivePath)
 
-	// Create mock checksums server
-	checksumContent := fmt.Sprintf("%s  fuego_0.5.0_darwin_arm64.tar.gz\n", expectedHash)
+	// Create mock checksums server with the platform-specific asset
+	checksumContent := fmt.Sprintf("%s  %s\n", expectedHash, assetName)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, checksumContent)
@@ -747,7 +758,7 @@ func TestVerifyChecksum_WithMockServer(t *testing.T) {
 	release := &ReleaseInfo{
 		TagName: "v0.5.0",
 		Assets: []Asset{
-			{Name: "fuego_0.5.0_darwin_arm64.tar.gz", DownloadURL: "https://example.com/fuego.tar.gz"},
+			{Name: assetName, DownloadURL: "https://example.com/fuego.tar.gz"},
 			{Name: "checksums.txt", DownloadURL: server.URL},
 		},
 	}
