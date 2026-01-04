@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.7] - 2025-01-04
+
+### Fixed
+
+- **Generated Projects Now Work Correctly**
+  - `main.go` now uses `PORT` environment variable instead of hardcoded `:3000`
+  - Route generator creates correct function names (`Get`, `Post` instead of `GET`, `POST`)
+  - Scanner properly detects all generated routes
+  - Projects created with `fuego new` compile and run without errors
+
+### Verified Working
+
+All CLI commands tested end-to-end:
+- `fuego new` - creates fully functional project
+- `fuego dev` - runs dev server with hot reload
+- `fuego generate route/middleware/page` - creates valid Go code
+- `fuego routes` - lists all routes correctly  
+- `fuego tailwind build` - builds CSS
+- `fuego openapi generate` - generates OpenAPI spec
+
 ## [0.11.6] - 2025-01-04
 
 ### Added
