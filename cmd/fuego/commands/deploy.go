@@ -16,9 +16,11 @@ import (
 )
 
 var (
-	deployNoBuild bool
-	deployEnvVars []string
-	deployApp     string
+	deployNoBuild   bool
+	deployEnvVars   []string
+	deployApp       string
+	deployEnvFile   string
+	deployNoEnvFile bool
 )
 
 var deployCmd = &cobra.Command{
@@ -38,7 +40,9 @@ Examples:
   fuego deploy                    # Deploy current directory
   fuego deploy --no-build         # Skip build, use existing image
   fuego deploy --env KEY=value    # Set env var for this deployment
-  fuego deploy --app my-app       # Deploy to specific app`,
+  fuego deploy --app my-app       # Deploy to specific app
+  fuego deploy --env-file .env    # Load env vars from file
+  fuego deploy --no-env-file      # Skip auto-loading .env file`,
 	Run: runDeploy,
 }
 
@@ -46,6 +50,8 @@ func init() {
 	deployCmd.Flags().BoolVar(&deployNoBuild, "no-build", false, "Skip build, use existing image")
 	deployCmd.Flags().StringArrayVarP(&deployEnvVars, "env", "e", nil, "Set environment variable (can be used multiple times)")
 	deployCmd.Flags().StringVar(&deployApp, "app", "", "App name (defaults to name in fuego.yaml)")
+	deployCmd.Flags().StringVar(&deployEnvFile, "env-file", "", "Load environment variables from file (default: .env if exists)")
+	deployCmd.Flags().BoolVar(&deployNoEnvFile, "no-env-file", false, "Skip auto-loading .env file")
 
 	rootCmd.AddCommand(deployCmd)
 }
@@ -167,29 +173,65 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// Set environment variables if provided
-	if len(deployEnvVars) > 0 {
-		envMap := make(map[string]string)
-		for _, env := range deployEnvVars {
-			parts := strings.SplitN(env, "=", 2)
-			if len(parts) == 2 {
-				envMap[parts[0]] = parts[1]
+	// Load environment variables from file and/or flags
+	envMap := make(map[string]string)
+
+	// Auto-load .env file unless disabled
+	if !deployNoEnvFile {
+		envFile := deployEnvFile
+		if envFile == "" {
+			// Check for .env file in current directory
+			if _, err := os.Stat(".env"); err == nil {
+				envFile = ".env"
 			}
 		}
 
-		if len(envMap) > 0 {
+		if envFile != "" {
 			if !jsonOutput {
-				fmt.Printf("  %s Setting %d environment variable(s)...\n", yellow("->"), len(envMap))
+				fmt.Printf("  %s Loading environment from %s...\n", dim("->"), envFile)
 			}
 
-			if err := client.SetEnv(ctx, appName, envMap); err != nil {
+			fileEnv, err := loadEnvFile(envFile)
+			if err != nil {
 				if jsonOutput {
-					printJSONError(fmt.Errorf("failed to set env vars: %w", err))
+					printJSONError(fmt.Errorf("failed to load env file: %w", err))
 				} else {
-					fmt.Printf("  %s Failed to set env vars: %v\n", red("Error:"), err)
+					fmt.Printf("  %s Failed to load env file: %v\n", red("Error:"), err)
 				}
 				os.Exit(1)
 			}
+
+			for k, v := range fileEnv {
+				envMap[k] = v
+			}
+		}
+	}
+
+	// Override with command-line env vars
+	for _, env := range deployEnvVars {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) == 2 {
+			envMap[parts[0]] = parts[1]
+		}
+	}
+
+	// Set environment variables if any
+	if len(envMap) > 0 {
+		if !jsonOutput {
+			fmt.Printf("  %s Setting %d environment variable(s)...\n", yellow("->"), len(envMap))
+		}
+
+		if err := client.SetEnv(ctx, appName, envMap); err != nil {
+			if jsonOutput {
+				printJSONError(fmt.Errorf("failed to set env vars: %w", err))
+			} else {
+				fmt.Printf("  %s Failed to set env vars: %v\n", red("Error:"), err)
+			}
+			os.Exit(1)
+		}
+
+		if !jsonOutput {
+			fmt.Printf("  %s Environment configured\n\n", green("OK"))
 		}
 	}
 
@@ -236,16 +278,40 @@ func runDeploy(cmd *cobra.Command, args []string) {
 
 		// Create Dockerfile if it doesn't exist
 		dockerfilePath := "Dockerfile"
+		createdDockerfile := false
 		if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
-			dockerfile := `FROM alpine:latest
-RUN apk --no-cache add ca-certificates
+			// Build a Dockerfile that copies all necessary files
+			var dockerfileBuilder strings.Builder
+			dockerfileBuilder.WriteString(`FROM alpine:latest
+RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
+
+# Copy the binary
 COPY app .
-COPY static ./static 2>/dev/null || true
+`)
+			// Check for static directory
+			if _, err := os.Stat("static"); err == nil {
+				dockerfileBuilder.WriteString("\n# Copy static files\nCOPY static ./static\n")
+			}
+
+			// Check for styles directory
+			if _, err := os.Stat("styles"); err == nil {
+				dockerfileBuilder.WriteString("\n# Copy styles\nCOPY styles ./styles\n")
+			}
+
+			// Check for templates directory
+			if _, err := os.Stat("templates"); err == nil {
+				dockerfileBuilder.WriteString("\n# Copy templates\nCOPY templates ./templates\n")
+			}
+
+			dockerfileBuilder.WriteString(`
+# Set default port
+ENV PORT=3000
 EXPOSE 3000
+
 CMD ["./app"]
-`
-			if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0644); err != nil {
+`)
+			if err := os.WriteFile(dockerfilePath, []byte(dockerfileBuilder.String()), 0644); err != nil {
 				if jsonOutput {
 					printJSONError(fmt.Errorf("failed to create Dockerfile: %w", err))
 				} else {
@@ -253,6 +319,11 @@ CMD ["./app"]
 				}
 				os.Exit(1)
 			}
+			createdDockerfile = true
+		}
+
+		// Clean up generated Dockerfile after build
+		if createdDockerfile {
 			defer func() { _ = os.Remove(dockerfilePath) }()
 		}
 
@@ -482,4 +553,56 @@ CMD ["./app"]
 		}
 		fmt.Printf("  Deployment ID: %s\n", dim(deployment.ID))
 	}
+}
+
+// loadEnvFile reads a .env file and returns a map of key-value pairs.
+// It supports:
+// - KEY=value
+// - KEY="quoted value"
+// - KEY='single quoted'
+// - # comments
+// - Empty lines
+func loadEnvFile(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	envMap := make(map[string]string)
+	lines := strings.Split(string(data), "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Split on first =
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// Remove quotes if present
+		if len(value) >= 2 {
+			if (value[0] == '"' && value[len(value)-1] == '"') ||
+				(value[0] == '\'' && value[len(value)-1] == '\'') {
+				value = value[1 : len(value)-1]
+			}
+		}
+
+		// Skip empty keys
+		if key == "" {
+			continue
+		}
+
+		envMap[key] = value
+	}
+
+	return envMap, nil
 }
