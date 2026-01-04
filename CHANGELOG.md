@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.5] - 2025-01-04
+
+### Fixed
+
+- **Cloud Client**
+  - User-Agent now uses actual CLI version instead of hardcoded "1.0"
+  - Added automatic retry with exponential backoff for transient errors
+  - Retries on network errors, rate limiting (429), and server errors (5xx)
+  - Max 3 retries with 500ms, 1s, 2s delays
+
 ## [0.11.4] - 2025-01-04
 
 ### Changed
