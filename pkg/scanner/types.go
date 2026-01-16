@@ -53,6 +53,8 @@ type Handler struct {
 	Name string
 	// Method is the HTTP method (e.g., "GET", "POST")
 	Method string
+	// Source is the extracted function body source code
+	Source string
 }
 
 // MiddlewareFile represents a discovered middleware.go file.

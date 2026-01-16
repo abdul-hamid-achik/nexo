@@ -203,8 +203,14 @@ func (s *Scanner) parsePathSegments(relDir string) []Segment {
 
 // scanRouteFile scans a route.go file for handlers.
 func (s *Scanner) scanRouteFile(filePath, relPath string, segments []Segment) (*RouteFile, error) {
+	// Read file content for source extraction
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
 	// Parse the Go file
-	file, err := parser.ParseFile(s.fset, filePath, nil, parser.ParseComments)
+	file, err := parser.ParseFile(s.fset, filePath, content, parser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse: %w", err)
 	}
@@ -237,9 +243,20 @@ func (s *Scanner) scanRouteFile(filePath, relPath string, segments []Segment) (*
 			continue
 		}
 
+		// Extract function body source code
+		var source string
+		if fn.Body != nil {
+			start := s.fset.Position(fn.Body.Pos()).Offset
+			end := s.fset.Position(fn.Body.End()).Offset
+			if start >= 0 && end <= len(content) && start < end {
+				source = string(content[start:end])
+			}
+		}
+
 		route.Handlers = append(route.Handlers, Handler{
 			Name:   fn.Name.Name,
 			Method: method,
+			Source: source,
 		})
 
 		if s.verbose {
