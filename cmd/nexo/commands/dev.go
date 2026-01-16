@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/abdul-hamid-achik/nexo/pkg/generator"
+	"github.com/abdul-hamid-achik/nexo/pkg/scanner"
 	"github.com/abdul-hamid-achik/nexo/pkg/tools"
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"
@@ -193,14 +194,61 @@ func isValidNexoSource(dir string) bool {
 	}
 	defer func() { _ = f.Close() }()
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
+	scan := bufio.NewScanner(f)
+	for scan.Scan() {
+		line := scan.Text()
 		if strings.HasPrefix(line, "module ") {
 			return strings.Contains(line, "github.com/abdul-hamid-achik/nexo")
 		}
 	}
 	return false
+}
+
+// generateRoutes generates routes using either the new scanner or legacy generator
+func generateRoutes(appDir string, verbose bool) error {
+	yellow := color.New(color.FgYellow).SprintFunc()
+
+	// Check if there are Next.js-style directories (brackets or parentheses)
+	hasNextJSStyle := false
+	_ = filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || !info.IsDir() {
+			return nil
+		}
+		name := info.Name()
+		if scanner.IsNextJSStyle(name) {
+			hasNextJSStyle = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+
+	if hasNextJSStyle {
+		// Use new scanner for Next.js-style routes
+		if verbose {
+			fmt.Printf("  %s Using Next.js-style route scanner\n", yellow("→"))
+		}
+
+		moduleName, err := scanner.GetModuleName()
+		if err != nil {
+			return fmt.Errorf("failed to get module name: %w", err)
+		}
+
+		gen := scanner.NewGenerator(scanner.GeneratorConfig{
+			ModuleName: moduleName,
+			AppDir:     appDir,
+			OutputDir:  ".nexo/generated",
+		})
+
+		_, err = gen.Generate()
+		if err != nil {
+			return fmt.Errorf("Next.js-style route generation failed: %w", err)
+		}
+	}
+
+	// Always run legacy generator for backward compatibility
+	// It generates nexo_routes.go which the main.go imports
+	_, err := generator.ScanAndGenerateRoutes(appDir, "nexo_routes.go")
+	return err
 }
 
 func runDev(cmd *cobra.Command, args []string) {
@@ -229,7 +277,7 @@ func runDev(cmd *cobra.Command, args []string) {
 
 	// Generate routes file
 	fmt.Printf("  %s Generating routes...\n", yellow("→"))
-	if _, err := generator.ScanAndGenerateRoutes("app", "nexo_routes.go"); err != nil {
+	if err := generateRoutes("app", devVerbose); err != nil {
 		fmt.Printf("  %s Failed to generate routes: %v\n", red("Error:"), err)
 		os.Exit(1)
 	}
@@ -413,7 +461,7 @@ func runDev(cmd *cobra.Command, args []string) {
 					if devVerbose {
 						fmt.Printf("  [%s] %s Regenerating routes...\n", timestamp, yellow("→"))
 					}
-					if _, err := generator.ScanAndGenerateRoutes("app", "nexo_routes.go"); err != nil {
+					if err := generateRoutes("app", devVerbose); err != nil {
 						fmt.Printf("  [%s] %s route generation failed: %v\n", timestamp, red("✗"), err)
 						return
 					}

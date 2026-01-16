@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,15 +9,19 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/charmbracelet/huh"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
 var newCmd = &cobra.Command{
-	Use:   "new [name]",
+	Use:   "new <name>",
 	Short: "Create a new Nexo project",
 	Long: `Create a new Nexo project with the recommended directory structure.
+
+Supports Next.js-style routing with actual bracket notation:
+  app/api/users/[id]/route.go  → Dynamic route
+  app/api/docs/[...slug]/route.go → Catch-all route
+  app/(admin)/dashboard/route.go → Route group
 
 Examples:
   nexo new myapp
@@ -32,20 +37,26 @@ var (
 )
 
 func init() {
-	newCmd.Flags().BoolVar(&apiOnly, "api-only", false, "Create an API-only project without templ pages, Tailwind, or HTMX")
-	newCmd.Flags().BoolVar(&skipPrompts, "skip-prompts", false, "Skip interactive prompts and use defaults (full-stack)")
+	newCmd.Flags().BoolVar(&apiOnly, "api-only", false, "Create API-only project without templ")
+	newCmd.Flags().BoolVar(&skipPrompts, "skip-prompts", false, "Skip prompts and use defaults")
 }
 
 func runNew(cmd *cobra.Command, args []string) {
 	name := args[0]
-	var createdFiles []string
+	cyan := color.New(color.FgCyan).SprintFunc()
+	green := color.New(color.FgGreen).SprintFunc()
+	yellow := color.New(color.FgYellow).SprintFunc()
 
-	// Check if directory already exists
+	if !jsonOutput {
+		fmt.Printf("\n  %s Creating new project: %s\n\n", cyan("Nexo"), name)
+	}
+
+	// Check if directory exists
 	if _, err := os.Stat(name); !os.IsNotExist(err) {
 		if jsonOutput {
 			printJSONError(fmt.Errorf("directory %s already exists", name))
 		} else {
-			fmt.Printf("  %s Directory %s already exists\n", color.RedString("Error:"), name)
+			fmt.Printf("  %s Directory %s already exists\n\n", color.RedString("Error:"), name)
 		}
 		os.Exit(1)
 	}
@@ -53,65 +64,26 @@ func runNew(cmd *cobra.Command, args []string) {
 	// Determine project type
 	useTempl := !apiOnly
 
-	// Interactive prompts (unless --api-only or --skip-prompts is set)
-	if !apiOnly && !skipPrompts && !jsonOutput {
-		cyan := color.New(color.FgCyan).SprintFunc()
-		fmt.Printf("\n  %s Creating new project: %s\n\n", cyan("Nexo"), name)
-
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title("Would you like to use templ for pages?").
-					Description("Includes Tailwind CSS and HTMX for a full-stack experience").
-					Value(&useTempl).
-					Affirmative("Yes").
-					Negative("No"),
-			),
-		)
-
-		err := form.Run()
-		if err != nil {
-			if err.Error() == "user aborted" {
-				fmt.Println("\n  Cancelled.")
-				os.Exit(0)
-			}
-			// If terminal doesn't support interactive mode, use defaults
-			useTempl = true
-		}
-		fmt.Println()
-	} else if !jsonOutput {
-		cyan := color.New(color.FgCyan).SprintFunc()
-		if apiOnly {
-			fmt.Printf("\n  %s Creating API-only project: %s\n\n", cyan("Nexo"), name)
-		} else {
-			fmt.Printf("\n  %s Creating new project: %s\n\n", cyan("Nexo"), name)
-		}
-	}
-
-	// Create directory structure
+	// Create directories
 	dirs := []string{
-		name,
-		filepath.Join(name, "app"),
 		filepath.Join(name, "app", "api", "health"),
+		filepath.Join(name, ".vscode"),
 	}
 
-	// Add full-stack directories
 	if useTempl {
 		dirs = append(dirs,
-			filepath.Join(name, "static"),
-			filepath.Join(name, "static", "css"),
 			filepath.Join(name, "styles"),
+			filepath.Join(name, "static", "css"),
 		)
-	} else {
-		dirs = append(dirs, filepath.Join(name, "static"))
 	}
 
+	var createdFiles []string
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			if jsonOutput {
-				printJSONError(fmt.Errorf("failed to create directory %s: %w", dir, err))
+				printJSONError(fmt.Errorf("failed to create %s: %w", dir, err))
 			} else {
-				fmt.Printf("  %s Failed to create directory %s: %v\n", color.RedString("Error:"), dir, err)
+				fmt.Printf("  %s Failed to create %s: %v\n", color.RedString("Error:"), dir, err)
 			}
 			os.Exit(1)
 		}
@@ -133,8 +105,9 @@ func runNew(cmd *cobra.Command, args []string) {
 	// Create files from templates
 	files := map[string]string{
 		filepath.Join(name, "go.mod"):                           goModTmpl,
-		filepath.Join(name, "nexo.yaml"):                       nexoYamlTmpl,
+		filepath.Join(name, "nexo.yaml"):                        nexoYamlTmpl,
 		filepath.Join(name, ".gitignore"):                       gitignoreTmpl,
+		filepath.Join(name, ".vscode", "settings.json"):         vscodeSettingsTmpl,
 		filepath.Join(name, "app", "api", "health", "route.go"): healthRouteTmpl,
 	}
 
@@ -167,133 +140,109 @@ func runNew(cmd *cobra.Command, args []string) {
 	}
 
 	// Install templ CLI if using templ
-	if useTempl {
+	if useTempl && !skipPrompts {
 		if !jsonOutput {
-			yellow := color.New(color.FgYellow).SprintFunc()
-			fmt.Printf("\n  %s Checking templ CLI...\n", yellow("→"))
+			fmt.Printf("\n  %s Installing templ CLI...\n", yellow("→"))
 		}
-		if err := ensureTemplInstalled(); err != nil {
+		installCmd := exec.Command("go", "install", "github.com/a-h/templ/cmd/templ@latest")
+		if err := installCmd.Run(); err != nil {
 			if !jsonOutput {
-				yellow := color.New(color.FgYellow).SprintFunc()
-				fmt.Printf("  %s Could not install templ: %v\n", yellow("Warning:"), err)
-				fmt.Printf("  Install manually: go install github.com/a-h/templ/cmd/templ@latest\n")
+				fmt.Printf("  %s templ install failed (you can install it manually)\n", yellow("Warning:"))
 			}
-		} else if !jsonOutput {
-			green := color.New(color.FgGreen).SprintFunc()
-			fmt.Printf("  %s templ CLI ready\n", green("✓"))
+		} else {
+			if !jsonOutput {
+				fmt.Printf("  %s templ CLI installed\n", green("✓"))
+			}
 		}
 	}
 
-	// Initialize git repository
+	// Initialize go module
 	if !jsonOutput {
-		yellow := color.New(color.FgYellow).SprintFunc()
-		fmt.Printf("  %s Initializing git repository...\n", yellow("→"))
+		fmt.Printf("\n  %s Initializing Go module...\n", yellow("→"))
 	}
-	gitCmd := exec.Command("git", "init")
-	gitCmd.Dir = name
-	if err := gitCmd.Run(); err != nil {
-		if !jsonOutput {
-			yellow := color.New(color.FgYellow).SprintFunc()
-			fmt.Printf("  %s Failed to initialize git: %v\n", yellow("Warning:"), err)
+
+	// Change to project directory and run go mod tidy
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(name); err != nil {
+		if jsonOutput {
+			printJSONError(err)
+		} else {
+			fmt.Printf("  %s Failed to change directory: %v\n", color.RedString("Error:"), err)
 		}
-	} else if !jsonOutput {
-		green := color.New(color.FgGreen).SprintFunc()
-		fmt.Printf("  %s Initialized git repository\n", green("✓"))
+		os.Exit(1)
 	}
 
 	// Fetch nexo module
 	if !jsonOutput {
-		yellow := color.New(color.FgYellow).SprintFunc()
-		fmt.Printf("  %s Fetching dependencies...\n", yellow("→"))
+		fmt.Printf("  %s Fetching nexo module...\n", yellow("→"))
 	}
-	getCmd := exec.Command("go", "get", "github.com/abdul-hamid-achik/nexo/pkg/nexo@latest")
-	getCmd.Dir = name
+
+	getCmd := exec.Command("go", "get", "github.com/abdul-hamid-achik/nexo@latest")
 	if err := getCmd.Run(); err != nil {
 		if !jsonOutput {
-			yellow := color.New(color.FgYellow).SprintFunc()
 			fmt.Printf("  %s Failed to fetch nexo module: %v\n", yellow("Warning:"), err)
-			fmt.Printf("  You can manually run: go get github.com/abdul-hamid-achik/nexo/pkg/nexo@latest\n")
-		}
-	} else {
-		// Run go mod tidy to clean up
-		tidyCmd := exec.Command("go", "mod", "tidy")
-		tidyCmd.Dir = name
-		_ = tidyCmd.Run()
-
-		if !jsonOutput {
-			green := color.New(color.FgGreen).SprintFunc()
-			fmt.Printf("  %s Dependencies installed\n", green("✓"))
 		}
 	}
+
+	tidyCmd := exec.Command("go", "mod", "tidy")
+	if err := tidyCmd.Run(); err != nil {
+		if !jsonOutput {
+			fmt.Printf("  %s go mod tidy failed: %v\n", yellow("Warning:"), err)
+		}
+	}
+
+	// Change back
+	_ = os.Chdir(origDir)
 
 	// Output result
 	if jsonOutput {
-		absPath, _ := filepath.Abs(name)
-		printSuccess(NewProjectOutput{
-			Project:   name,
-			Directory: absPath,
-			Created:   createdFiles,
-			NextSteps: []string{
-				fmt.Sprintf("cd %s", name),
-				"nexo dev",
-			},
-		})
+		result := map[string]any{
+			"name":      name,
+			"files":     createdFiles,
+			"type":      "full",
+			"nextSteps": []string{"cd " + name, "nexo dev"},
+		}
+		if apiOnly {
+			result["type"] = "api-only"
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(result)
 	} else {
-		green := color.New(color.FgGreen).SprintFunc()
-		cyan := color.New(color.FgCyan).SprintFunc()
 		fmt.Printf("\n  %s Project created successfully!\n\n", green("✓"))
 		fmt.Printf("  Next steps:\n")
 		fmt.Printf("    %s cd %s\n", cyan("$"), name)
 		fmt.Printf("    %s nexo dev\n\n", cyan("$"))
-		if useTempl {
-			fmt.Printf("  Your app will be available at %s\n\n", cyan("http://localhost:3000"))
-		}
 	}
-}
-
-// ensureTemplInstalled checks if templ is installed and installs it if not
-func ensureTemplInstalled() error {
-	// Check if templ is already installed
-	if _, err := exec.LookPath("templ"); err == nil {
-		return nil
-	}
-
-	// Install templ
-	cmd := exec.Command("go", "install", "github.com/a-h/templ/cmd/templ@latest")
-	return cmd.Run()
 }
 
 func createFileFromTemplate(path, tmplContent string, data any) error {
-	// Handle empty content (like .gitkeep files)
-	if tmplContent == "" {
-		f, err := os.Create(path)
-		if err != nil {
-			return fmt.Errorf("failed to create file: %w", err)
-		}
-		return f.Close()
-	}
-
-	tmpl, err := template.New(filepath.Base(path)).Parse(tmplContent)
-	if err != nil {
-		return fmt.Errorf("failed to parse template: %w", err)
+	// Create parent directory if needed
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
 	}
 
 	f, err := os.Create(path)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
+		return err
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := tmpl.Execute(f, data); err != nil {
-		return fmt.Errorf("failed to execute template: %w", err)
+	// Empty content means just create the file
+	if tmplContent == "" {
+		return nil
 	}
 
-	return nil
+	tmpl, err := template.New("file").Parse(tmplContent)
+	if err != nil {
+		return err
+	}
+
+	return tmpl.Execute(f, data)
 }
 
-// Template strings for project scaffolding
+// --- Templates ---
 
-// Main.go for full-stack projects (with templ)
 var mainGoTemplTmpl = strings.TrimSpace(`
 package main
 
@@ -307,23 +256,22 @@ import (
 func main() {
 	app := nexo.New()
 
-	// Register file-based routes (generated by nexo dev/build)
-	RegisterRoutes(app)
-
-	// Serve static files (CSS, JS, images)
+	// Serve static files
 	app.Static("/static", "static")
 
-	// Use PORT env var if set, otherwise default to 3000
+	// Run the application
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000"
 	}
 
-	log.Fatal(app.Listen(":" + port))
+	log.Printf("Starting server on http://localhost:%s", port)
+	if err := app.Listen(":" + port); err != nil {
+		log.Fatal(err)
+	}
 }
 `) + "\n"
 
-// Main.go for API-only projects
 var mainGoAPIOnlyTmpl = strings.TrimSpace(`
 package main
 
@@ -337,16 +285,16 @@ import (
 func main() {
 	app := nexo.New()
 
-	// Register file-based routes (generated by nexo dev/build)
-	RegisterRoutes(app)
-
-	// Use PORT env var if set, otherwise default to 3000
+	// Run the application
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000"
 	}
 
-	log.Fatal(app.Listen(":" + port))
+	log.Printf("Starting server on http://localhost:%s", port)
+	if err := app.Listen(":" + port); err != nil {
+		log.Fatal(err)
+	}
 }
 `) + "\n"
 
@@ -395,7 +343,6 @@ tmp/
 
 # IDE
 .idea/
-.vscode/
 *.swp
 *.swo
 
@@ -420,6 +367,16 @@ static/css/output.css
 # Environment
 .env
 .env.local
+`) + "\n"
+
+// VS Code settings for gopls with nexo build tag
+var vscodeSettingsTmpl = strings.TrimSpace(`
+{
+  "gopls": {
+    "build.buildFlags": ["-tags=nexo"]
+  },
+  "go.buildTags": "nexo"
+}
 `) + "\n"
 
 var healthRouteTmpl = strings.TrimSpace(`
@@ -447,60 +404,33 @@ templ Layout(title string) {
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>{ title } | {{.Name}}</title>
 			<link href="/static/css/output.css" rel="stylesheet"/>
-			<script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+			<script src="https://unpkg.com/htmx.org@1.9.10"></script>
 		</head>
-		<body class="bg-gray-50 text-gray-900 min-h-screen">
+		<body class="bg-gray-50 min-h-screen">
 			{ children... }
 		</body>
 	</html>
 }
 `) + "\n"
 
-// Page template with HTMX example
+// Home page template
 var pageTemplTmpl = strings.TrimSpace(`
 package app
 
 templ Page() {
 	@Layout("Home") {
-		<main class="min-h-screen flex items-center justify-center p-4">
-			<div class="max-w-2xl w-full">
-				<div class="text-center mb-12">
-					<h1 class="text-5xl font-bold text-gray-900 mb-4">
-						Welcome to Nexo
-					</h1>
-					<p class="text-xl text-gray-600">
-						A file-system based Go framework for APIs and websites.
-					</p>
-				</div>
-				<div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-					<h2 class="text-2xl font-semibold mb-4">Get Started</h2>
-					<ul class="space-y-3 text-gray-700">
-						<li class="flex items-start gap-3">
-							<span class="text-green-500 mt-1">✓</span>
-							<span>Edit <code class="bg-gray-100 px-2 py-0.5 rounded text-sm">app/page.templ</code> to modify this page</span>
-						</li>
-						<li class="flex items-start gap-3">
-							<span class="text-green-500 mt-1">✓</span>
-							<span>Add new pages in <code class="bg-gray-100 px-2 py-0.5 rounded text-sm">app/</code></span>
-						</li>
-						<li class="flex items-start gap-3">
-							<span class="text-green-500 mt-1">✓</span>
-							<span>API routes go in <code class="bg-gray-100 px-2 py-0.5 rounded text-sm">app/api/</code></span>
-						</li>
-					</ul>
-				</div>
-				<div class="bg-white rounded-xl shadow-lg p-8">
-					<h2 class="text-2xl font-semibold mb-4">HTMX Example</h2>
-					<p class="text-gray-600 mb-4">Click the button to fetch from the API:</p>
-					<button
-						class="bg-indigo-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-indigo-700 transition cursor-pointer"
-						hx-get="/api/health"
-						hx-target="#result"
-						hx-swap="innerHTML"
-					>
-						Check Health
-					</button>
-					<div id="result" class="mt-4 p-4 bg-gray-50 rounded-lg min-h-[60px]"></div>
+		<main class="container mx-auto px-4 py-16">
+			<div class="max-w-2xl mx-auto text-center">
+				<h1 class="text-4xl font-bold text-gray-900 mb-4">
+					Welcome to {{.Name}}
+				</h1>
+				<p class="text-lg text-gray-600 mb-8">
+					Your Nexo application is ready to go!
+				</p>
+				<div class="space-x-4">
+					<a href="/api/health" class="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+						Check API Health
+					</a>
 				</div>
 			</div>
 		</main>
@@ -510,18 +440,7 @@ templ Page() {
 
 // Tailwind CSS input file
 var tailwindInputCssTmpl = strings.TrimSpace(`
-@import "tailwindcss";
-
-/* Custom styles */
-@layer components {
-	.btn {
-		@apply px-4 py-2 rounded-lg font-medium transition;
-	}
-	.btn-primary {
-		@apply bg-indigo-600 text-white hover:bg-indigo-700;
-	}
-	.btn-secondary {
-		@apply bg-gray-200 text-gray-800 hover:bg-gray-300;
-	}
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 `) + "\n"

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Next.js App Router Directory Naming Support**
+  - Users can now create directories with **actual Next.js naming**: `[id]`, `[...slug]`, `[[...slug]]`, `(group)`
+  - Route files use `//go:build nexo` build tag to exclude from normal `go build`
+  - gopls configured with `-tags=nexo` provides full IDE support (autocomplete, type checking, go-to-definition)
+  - Nexo parses files with `go/parser` and generates valid Go code in `.nexo/generated/`
+  - New `nexo generate` command for one-time generation from `app/` to `.nexo/generated/`
+  - `nexo dev` and `nexo build` automatically detect and handle Next.js-style routes
+  - Backward compatibility maintained with legacy underscore convention (`_id`, `__slug`, `___slug`, `_group_`)
+
+- **Scanner Package (`pkg/scanner/`)**
+  - Pattern matching for Next.js directory naming using regex
+  - `ParseSegment()` function to identify segment types (dynamic, catch-all, optional catch-all, group)
+  - `BuildURLPattern()` to convert directory structure to URL patterns
+  - `MakeHandlerName()` to generate unique Go function names from routes
+  - Uses `go/parser` to extract handler functions from route.go files
+
+- **Generator Improvements**
+  - Generates `.nexo/generated/routes.go` with all handlers prefixed by route path
+  - Generates `.nexo/generated/register.go` with `RegisterRoutes()` function
+  - Handles both Next.js-style and legacy patterns seamlessly
+
+- **Editor Configuration**
+  - `nexo new` now creates `.vscode/settings.json` with gopls build flags configured
+  - Enables full LSP support for route files with `//go:build nexo` tag
+
+### Deprecated
+
+- The underscore convention (`_id`, `__slug`, `___slug`, `_group_`) is now deprecated in favor of Next.js naming
+- Both conventions will continue to work during a transition period
+
 ## [0.11.8] - 2025-01-04
 
 ### Added
@@ -42,7 +74,7 @@ All CLI commands tested end-to-end:
 - `nexo new` - creates fully functional project
 - `nexo dev` - runs dev server with hot reload
 - `nexo generate route/middleware/page` - creates valid Go code
-- `nexo routes` - lists all routes correctly  
+- `nexo routes` - lists all routes correctly
 - `nexo tailwind build` - builds CSS
 - `nexo openapi generate` - generates OpenAPI spec
 

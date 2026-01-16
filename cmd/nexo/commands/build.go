@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/abdul-hamid-achik/nexo/pkg/generator"
+	"github.com/abdul-hamid-achik/nexo/pkg/scanner"
 	"github.com/abdul-hamid-achik/nexo/pkg/tools"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -161,7 +162,7 @@ func runBuild(cmd *cobra.Command, args []string) {
 			yellow := color.New(color.FgYellow).SprintFunc()
 			fmt.Printf("  %s Generating routes...\n", yellow("→"))
 		}
-		if _, err := generator.ScanAndGenerateRoutes("app", "nexo_routes.go"); err != nil {
+		if err := generateRoutesForBuild("app"); err != nil {
 			if jsonOutput {
 				printJSONError(fmt.Errorf("route generation failed: %w", err))
 			} else {
@@ -251,4 +252,39 @@ func runBuild(cmd *cobra.Command, args []string) {
 
 		fmt.Printf("\n  Run with: %s\n\n", cyan("./"+outputPath))
 	}
+}
+
+// generateRoutesForBuild handles route generation with Next.js-style support
+func generateRoutesForBuild(appDir string) error {
+	// Check if there are Next.js-style directories
+	hasNextJSStyle := false
+	_ = filepath.Walk(appDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() && scanner.IsNextJSStyle(info.Name()) {
+			hasNextJSStyle = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+
+	if hasNextJSStyle {
+		moduleName, err := scanner.GetModuleName()
+		if err != nil {
+			return fmt.Errorf("failed to get module name: %w", err)
+		}
+		gen := scanner.NewGenerator(scanner.GeneratorConfig{
+			ModuleName: moduleName,
+			AppDir:     appDir,
+			OutputDir:  ".nexo/generated",
+		})
+		if _, err := gen.Generate(); err != nil {
+			return fmt.Errorf("next.js-style route generation failed: %w", err)
+		}
+	}
+
+	// Always run legacy generator for backward compatibility
+	_, err := generator.ScanAndGenerateRoutes(appDir, "nexo_routes.go")
+	return err
 }

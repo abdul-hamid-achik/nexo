@@ -9,8 +9,9 @@ var generateCmd = &cobra.Command{
 	Long: `Generate routes, middleware, proxy, pages, and loaders for your Nexo project.
 
 Examples:
+  nexo generate routes                           Generate route registration code
   nexo generate route users --methods GET,POST
-  nexo generate route users/_id --methods GET,PUT,DELETE
+  nexo generate route users/[id] --methods GET,PUT,DELETE
   nexo generate middleware auth --path api/protected
   nexo generate proxy --template auth-check
   nexo generate page dashboard
@@ -19,4 +20,5 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(generateCmd)
+	generateCmd.AddCommand(generateRoutesCmd)
 }
