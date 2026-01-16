@@ -152,15 +152,25 @@ func (g *Generator) generateRegisterFile(result *ScanResult, outputPath string) 
 	// Build route registrations using generated handler names (no imports needed)
 	var registrations []string
 	for _, rf := range result.Routes {
+		// Check for catch-all param name
+		catchAllParam := ""
+		for _, seg := range rf.Segments {
+			if seg.Type == SegmentCatchAll || seg.Type == SegmentOptionalCatchAll {
+				catchAllParam = seg.Name
+				break
+			}
+		}
+
 		for _, h := range rf.Handlers {
 			handlerName := MakeHandlerName(rf.URLPattern, h.Method)
 			reg := fmt.Sprintf(`tree.AddRoute(&nexo.Route{
-		Pattern:  "%s",
-		Method:   "%s",
-		Handler:  %s,
-		FilePath: "%s",
-		Scope:    "%s",
-		Priority: %d,
+		Pattern:       "%s",
+		Method:        "%s",
+		Handler:       %s,
+		FilePath:      "%s",
+		Scope:         "%s",
+		Priority:      %d,
+		CatchAllParam: "%s",
 	})`,
 				rf.URLPattern,
 				h.Method,
@@ -168,6 +178,7 @@ func (g *Generator) generateRegisterFile(result *ScanResult, outputPath string) 
 				rf.FilePath,
 				rf.Scope,
 				calculatePriority(rf.URLPattern),
+				catchAllParam,
 			)
 			registrations = append(registrations, reg)
 		}

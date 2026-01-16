@@ -37,6 +37,10 @@ type Route struct {
 	// Static: 100, Dynamic: 50, CatchAll: 10, OptionalCatchAll: 5
 	Priority int
 
+	// CatchAllParam is the parameter name for catch-all routes (e.g., "slug" for [...slug]).
+	// Chi stores catch-all as "*", so we need to map it to the original param name.
+	CatchAllParam string
+
 	// Middlewares specific to this route
 	Middlewares []MiddlewareFunc
 }
@@ -179,7 +183,7 @@ func (rt *RouteTree) Mount(router chi.Router, globalMiddlewares []MiddlewareFunc
 		middlewares = append(middlewares, rt.GetMiddlewareChain(route.Pattern, route.Scope)...)
 		middlewares = append(middlewares, route.Middlewares...)
 
-		handler := rt.wrapHandler(route.Handler, middlewares)
+		handler := rt.wrapHandler(route, middlewares)
 
 		switch route.Method {
 		case http.MethodGet:
@@ -201,12 +205,19 @@ func (rt *RouteTree) Mount(router chi.Router, globalMiddlewares []MiddlewareFunc
 }
 
 // wrapHandler converts a HandlerFunc with middleware chain to http.HandlerFunc.
-func (rt *RouteTree) wrapHandler(handler HandlerFunc, middlewares []MiddlewareFunc) http.HandlerFunc {
+func (rt *RouteTree) wrapHandler(route *Route, middlewares []MiddlewareFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := NewContext(w, r)
 
+		// For catch-all routes, map the "*" param to the original param name
+		if route.CatchAllParam != "" {
+			if wildcardValue := chi.URLParam(r, "*"); wildcardValue != "" {
+				ctx.SetParam(route.CatchAllParam, wildcardValue)
+			}
+		}
+
 		// Build the middleware chain (apply in reverse order)
-		h := handler
+		h := route.Handler
 		for i := len(middlewares) - 1; i >= 0; i-- {
 			h = middlewares[i](h)
 		}
